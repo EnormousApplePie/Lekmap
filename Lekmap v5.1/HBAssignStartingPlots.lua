@@ -24,7 +24,9 @@ include("NaturalWondersCustomMethods");
 -- MOD.EAP: Include and run the Config
 ------------------------------------------------------------------------------
 include("Lekmap_Config.lua")
+include("Lekmap_ResourceInfos.lua")
 runConfig()
+
 ------------------------------------------------------------------------------
 --                             FOREWORD
 
@@ -629,10 +631,9 @@ function AssignStartingPlots:__Init()
 	self.plotDataIsThreeFromCoast = GenerateThreeFromCoastTable(self.plotDataIsCoastal, self.plotDataIsNextToCoast)
 	
 	-- Sort the resource preference entries by complexity, so that the most complex entries are evaluated first.
-	self:SortResourcePreferenceTable();
+	self:SortResourcePreferenceTable()
+
 	
-	
-	--
 	-- Set up data for resource ID shortcuts.
 	--print("########## Resource ID's ##########");
 	local csvids = "";
@@ -653,6 +654,14 @@ function AssignStartingPlots:__Init()
 		local bCanBeMountain = false;
 		local iAmountMajor = 0;
 		local iAmountMinor = 0;
+
+		-- MOD.EAP: New resourceinfos
+		--[[
+		for i, v in ipairs(ResourceInfos[1].ValidTerrains) do
+			print(i, v)
+		end
+		]]
+
 
 		if resource_data.NoRegional ~= nil then
 			bNoRegional = resource_data.NoRegional;
@@ -9231,7 +9240,8 @@ function AssignStartingPlots:GenerateGlobalResourcePlotLists_NEW()
 						-- Do not process this plot!
 					elseif plot:GetResourceType(-1) ~= -1 then
 						-- Plot has a resource already, do not include it.
-					elseif self:CheckResourceEligibility(resource_ID, x, y) then
+					elseif ResourceInfos:IsValidOn(resource_ID, x, y, true) then
+						
 						table.insert(results_table[resource_ID], i)
 					end		
 				end
