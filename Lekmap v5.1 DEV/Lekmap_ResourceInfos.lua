@@ -1,9 +1,5 @@
---luacheck: globals GameInfo globals ResourceInfos globals Map
+--luacheck: globals GameInfo globals Lekmap_ResourceInfos globals Map
 --luacheck: ignore FeatureTypes PlotTypes TerrainTypes table
-
-local ExcludedTerrains = {
-    
-}
 
 local TerrainData = {}
 for terrain_data in GameInfo.Terrains() do
@@ -14,9 +10,9 @@ for feature_data in GameInfo.Features() do
     FeatureData[feature_data.ID] = feature_data
 end
 
-ResourceInfos = {}
+Lekmap_ResourceInfos = {}
 
-function ResourceInfos:Initialize()
+function Lekmap_ResourceInfos:Initialize()
 
     for resource_data in GameInfo.Resources() do
         local resource_ID = resource_data.ID
@@ -55,14 +51,19 @@ function ResourceInfos:Initialize()
 
 return self end
 
-function ResourceInfos:IsValidOn(resource_ID, x, y, bSoftCheck)
+function Lekmap_ResourceInfos:IsValidOn(resource_ID, x, y, bSoftCheck)
 
     local plot = Map.GetPlot(x, y)
     local terrainType = plot:GetTerrainType()
     local featureType = plot:GetFeatureType()
     local plotType = plot:GetPlotType()
 
-    
+	if featureType == FeatureTypes.FEATURE_ICE
+	or featureType == self.feature_atoll
+	or featureType == FeatureTypes.FEATURE_OASIS
+	or plotType == PlotTypes.PLOT_MOUNTAIN
+	or plot:IsLake() then return false end -- might want to add support for lake resources later
+
     -- softcheck skips any feature/plottype checks for maximum availability
     if bSoftCheck and (self[resource_ID].ValidTerrains[terrainType]
     or self[resource_ID].ValidFeatureTerrains[terrainType]) then return true
@@ -79,4 +80,4 @@ function ResourceInfos:IsValidOn(resource_ID, x, y, bSoftCheck)
 
 return false end
 
-ResourceInfos:Initialize()
+Lekmap_ResourceInfos:Initialize()

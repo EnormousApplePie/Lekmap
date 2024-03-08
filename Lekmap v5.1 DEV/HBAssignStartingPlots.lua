@@ -123,7 +123,7 @@ function AssignStartingPlots.Create()
 	--
 	-- Scripters have the opportunity to replace member methods without
 	-- having to replace the entire process.
-	local findStarts = {
+	findStarts = {
 
 		-- Core Process member methods
 		__Init = AssignStartingPlots.__Init,
@@ -621,8 +621,6 @@ function AssignStartingPlots.Create()
 	
 	-- Entry point for easy overrides, for instance if only a couple things need to change.
 	findStarts:__CustomInit()
-	
-	return findStarts
 end
 ------------------------------------------------------------------------------
 function AssignStartingPlots:__Init()
@@ -9240,7 +9238,7 @@ function AssignStartingPlots:GenerateGlobalResourcePlotLists_NEW()
 						-- Do not process this plot!
 					elseif plot:GetResourceType(-1) ~= -1 then
 						-- Plot has a resource already, do not include it.
-					elseif ResourceInfos:IsValidOn(resource_ID, x, y, true) then
+					elseif Lekmap_ResourceInfos:IsValidOn(resource_ID, x, y, true) then
 						
 						table.insert(results_table[resource_ID], i)
 					end		
