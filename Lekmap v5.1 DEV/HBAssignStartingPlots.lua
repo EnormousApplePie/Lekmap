@@ -21,10 +21,11 @@ include("NaturalWondersCustomMethods");
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
--- MOD.EAP: Include and run the Config
+-- MOD.EAP: Includes. Also run the config file.
 ------------------------------------------------------------------------------
 include("Lekmap_Config.lua")
 include("Lekmap_ResourceInfos.lua")
+include("Lekmap_Utilities.lua")
 runConfig()
 
 ------------------------------------------------------------------------------
@@ -11343,16 +11344,22 @@ return false end
 ------------------------------------------------------------------------------
 function AssignStartingPlots:GenerateLuxuryPlotListsAtCitySite(x, y, radius, luxury_type, bRemoveFeatureIce)
 
-	--[[MOD.EAP: New version of GenerateLuxuryPlotListsAtCitySite() that uses the new ValidTerrainTypes table.
-		No longer generates way too many lists of prefered plots. Instead, it generates a single list of plots the resource is valid on.
-		This essentially means it ignores prefered plots. In reality this never really mattered, as all resources are pretty much fine on all sorts of terrain. 
-		Feature checks are currently done in FixResourceGraphics().]]
-
-
-	-- bRemoveFeatureIce is piggybacked on to this function to reduce redundant code.
-	-- If ice is being removed from around a plot, ONLY that will occur. If both ice 
-	-- removal and plot list generation are desired, call this function twice.
-	--print("GenerateLuxuryPlotListsAtCitySite called. RemoveIce:", bRemoveFeatureIce, "Plot:", x, y, "Radius:", radius);
+	
+	local plot_list = Lekmap_Utilities.GetPlots.Ring(x, y, radius)
+--[[
+	for _, plot in pairs(plot_list) do
+		local x, y = plot:GetX(), plot:GetY()
+		local iW, iH = Map.GetGridSize()
+		local plotIndex = x * iW + y + 1
+		if bRemoveFeatureIce == true then
+			if plot:GetFeatureType() == FeatureTypes.FEATURE_ICE then
+				plot:SetFeatureType(FeatureTypes.NO_FEATURE, -1)
+			end
+		elseif Lekmap_ResourceInfos:IsValidOn(luxury_type, x, y, true) then
+			--table.insert(results_table, plotIndex)
+		end
+	end
+--]]
 	local iW, iH = Map.GetGridSize();
 	local wrapX = Map:IsWrapX();
 	local wrapY = Map:IsWrapY();
@@ -11407,6 +11414,7 @@ function AssignStartingPlots:GenerateLuxuryPlotListsAtCitySite(x, y, radius, lux
 			end
 		end
 	end
+
 	return results_table
 end
 ------------------------------------------------------------------------------
