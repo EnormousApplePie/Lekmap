@@ -11479,7 +11479,7 @@ function AssignStartingPlots:PlaceLuxuries()
 	local iW, iH = Map.GetGridSize();
 	-- Place Luxuries at civ start locations.
 	local used_randoms_as_secondaries =	table.fill(false, 99);
-
+--[[
 	for loop, reg_data in ipairs(self.regions_sorted_by_type) do
 		local region_number = reg_data[1];
 		local this_region_luxury = reg_data[2];
@@ -11527,6 +11527,7 @@ function AssignStartingPlots:PlaceLuxuries()
 			end
 		end
 	end
+--]]
 	-- Place Luxuries at City States.
 	-- Candidates include luxuries exclusive to CS, the lux assigned to this CS's region (if in a region), and the randoms.
 	for city_state = 1, self.iNumCityStates do

@@ -41,7 +41,7 @@ end
 function PlaceResources:PlaceRegionalsCapital(amountPlaced)
 
     for _, region_data in ipairs(start_plot_database.regions_sorted_by_type) do
-        local amountToPlace = Map.GetCustomOption(21) or 5
+        local amountToPlace = Map.GetCustomOption(21) or 3
         local region_number = region_data[1]
         local region_luxury = region_data[2]
         local center_plotX = start_plot_database.startingPlots[region_number][1]
@@ -49,7 +49,7 @@ function PlaceResources:PlaceRegionalsCapital(amountPlaced)
 
         print(region_luxury)
         local valid_plots = {}
-        -- loop trough the 3 rings, expanding the search area if not enough plots have been found
+        -- loop trough the first 2 rings, expanding the search area if not enough plots have been found
         for i = 2, 3 do
             if #valid_plots < amountToPlace then
                 valid_plots = self.GenerateValidPlots(region_luxury, i, center_plotX, center_plotY)
@@ -62,3 +62,14 @@ function PlaceResources:PlaceRegionalsCapital(amountPlaced)
         --need to include impact
     end
 return amountPlaced end
+
+function PlaceResources:PlaceCityStateLuxuries()
+
+    for city_state = 1, start_plot_database.iNumCityStates do
+        if start_plot_database.city_state_validity_table[city_state] then
+            
+        
+        end
+
+    end
+end
