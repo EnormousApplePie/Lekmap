@@ -47,9 +47,23 @@ function Lekmap_ResourceInfos:Initialize()
                 self[resource_ID].ValidFeatureTypes[FeatureTypes[featureType]] = true
             end
         end
+        if GameInfo.Resource_Preferences ~= nil then
+            self:InitializePreferences(resource_ID)
+        end
     end
 
 return self end
+
+function Lekmap_ResourceInfos:InitializePreferences(resource_ID)
+    for preference_data in GameInfo.Resource_Preferences() do
+        if self[resource_ID].Preferences == nil then self[resource_ID].Preferences = {} end
+        for row, data in pairs(preference_data) do
+            if row.ResourceType == self[resource_ID].Type then
+                self[resource_ID].Preferences[row] = data
+            end
+        end
+    end
+end
 
 function Lekmap_ResourceInfos:IsValidOn(resource_ID, x, y, bSoftCheck)
 
@@ -65,13 +79,18 @@ function Lekmap_ResourceInfos:IsValidOn(resource_ID, x, y, bSoftCheck)
 	or plot:IsLake() then return false end -- might want to add support for lake resources later
 
     -- softcheck skips any feature/plottype checks for maximum availability
-    if bSoftCheck and (self[resource_ID].ValidTerrains[terrainType]
+    if bSoftCheck and ((self[resource_ID].ValidTerrains[terrainType]
+    or self[resource_ID].ValidTerrains[TerrainTypes["TERRAIN_HILL"]] and plotType == PlotTypes.PLOT_HILLS)
     or self[resource_ID].ValidFeatureTerrains[terrainType]) then return true
 
+    -- Resources with hills as valid terrain are valid on any terrain type with a hill
     elseif ((self[resource_ID].ValidTerrains[terrainType]
-    or self[resource_ID].ValidTerrains[TerrainTypes["TERRAIN_HILL"]]) and featureType == FeatureTypes.NO_FEATURE)
+    or (self[resource_ID].ValidTerrains[TerrainTypes["TERRAIN_HILL"]] and plotType == PlotTypes.PLOT_HILLS))
+    and featureType == FeatureTypes.NO_FEATURE)
+
     or (self[resource_ID].ValidFeatureTerrains[terrainType]
     and self[resource_ID].ValidFeatureTypes[featureType]) then
+
         if self[resource_ID].ValidTerrains[TerrainTypes["TERRAIN_HILL"]] then return true end
         if (plotType == PlotTypes.PLOT_LAND and self[resource_ID].Flatlands)
         or (plotType == PlotTypes.PLOT_HILLS and self[resource_ID].Hills)
@@ -79,5 +98,3 @@ function Lekmap_ResourceInfos:IsValidOn(resource_ID, x, y, bSoftCheck)
     end
 
 return false end
-
-Lekmap_ResourceInfos:Initialize()

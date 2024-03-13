@@ -26,6 +26,8 @@ include("NaturalWondersCustomMethods");
 include("Lekmap_Config.lua")
 include("Lekmap_ResourceInfos.lua")
 include("Lekmap_Utilities.lua")
+include("Lekmap_PlaceResources.lua")
+include("PlotIterators.lua")
 runConfig()
 
 ------------------------------------------------------------------------------
@@ -622,6 +624,8 @@ function AssignStartingPlots.Create()
 	
 	-- Entry point for easy overrides, for instance if only a couple things need to change.
 	findStarts:__CustomInit()
+
+	return findStarts
 end
 ------------------------------------------------------------------------------
 function AssignStartingPlots:__Init()
@@ -632,7 +636,6 @@ function AssignStartingPlots:__Init()
 	-- Sort the resource preference entries by complexity, so that the most complex entries are evaluated first.
 	self:SortResourcePreferenceTable()
 
-	
 	-- Set up data for resource ID shortcuts.
 	--print("########## Resource ID's ##########");
 	local csvids = "";
@@ -9998,6 +10001,7 @@ function AssignStartingPlots:PlaceResourceImpact(x, y, impact_table_number, radi
 	end
 end
 ------------------------------------------------------------------------------
+--[[
 function AssignStartingPlots:HandleResourcePreferences(plot_list, resources_to_place, res_ID, impact_table_number)
 
 	-- Before we place any resources, this function will first check with the resource preferences table.
@@ -10103,6 +10107,7 @@ function AssignStartingPlots:HandleResourcePreferences(plot_list, resources_to_p
 		--print("No plots left to place resource on or frequency is set to 0 for this resource! -ProcessResourceList");
 	end
 end
+--]]
 ------------------------------------------------------------------------------
 function AssignStartingPlots:ProcessResourceList_NEW(frequency, impact_table_number, plot_list, resources_to_place)
 	-- This function needs to receive two numbers and two tables.
@@ -11179,100 +11184,21 @@ function AssignStartingPlots:AssignLuxuryRoles()
 end
 ------------------------------------------------------------------------------
 function AssignStartingPlots:GetListOfAllowableLuxuriesAtCitySite(x, y, radius)
-	--print("-"); print("- -"); print("Getting list of luxuries allowable at city state site:", x, y, "Radius:", radius);
-	local iW, iH = Map.GetGridSize();
-	local wrapX = Map:IsWrapX();
-	local wrapY = Map:IsWrapY();
-	local odd = self.firstRingYIsOdd;
-	local even = self.firstRingYIsEven;
-	local nextX, nextY, plot_adjustments;
-	local allowed_luxuries = table.fill(false, 99);		-- MOD.Barathor: original = 35; updated to hold higher luxury ID's
-
-	for ripple_radius = 1, radius do
-		local ripple_value = radius - ripple_radius + 1;
-		local currentX = x - ripple_radius;
-		local currentY = y;
-		for direction_index = 1, 6 do
-			for plot_to_handle = 1, ripple_radius do
-			 	if currentY / 2 > math.floor(currentY / 2) then
-					plot_adjustments = odd[direction_index];
-				else
-					plot_adjustments = even[direction_index];
-				end
-				nextX = currentX + plot_adjustments[1];
-				nextY = currentY + plot_adjustments[2];
-				if wrapX == false and (nextX < 0 or nextX >= iW) then
-					-- X is out of bounds.
-				elseif wrapY == false and (nextY < 0 or nextY >= iH) then
-					-- Y is out of bounds.
-				else
-					local realX = nextX;
-					local realY = nextY;
-					if wrapX then
-						realX = realX % iW;
-					end
-					if wrapY then
-						realY = realY % iH;
-					end
-					-- We've arrived at the correct x and y for the current plot.
-					local plot = Map.GetPlot(realX, realY);
-					local plotType = plot:GetPlotType()
-					local terrainType = plot:GetTerrainType()
-					local featureType = plot:GetFeatureType()
-					local plotIndex = realY * iW + realX + 1;
-					-- MOD.Barathor: Start
-					--[[ MOD.Barathor: Fixed: Check to make sure this plot doesn't already contain a resource!
-						 This corrects a rare bug that occurs and denies some civs their 2nd bonus luxury type, since 
-						 it would mark a tile's resource options to "true" when there's already a regional luxury present. ]]
-					if plot:GetResourceType(-1) == -1 then	
-						-- Check this plot for luxury placement eligibility. Set allowed luxuries to true.
-						-- MOD.EAP: Start
-
-						if plot:IsLake() == false then
-							for loop, resource in pairs(self.ResourceTypes) do
-								local res_ID = resource.ID
-								if resource.Class == "RESOURCECLASS_LUXURY" then
-									-- check trough both valid terrain tables
-									if self.ValidTerrainTypes[res_ID] ~= nil then							
-										for i, validTerrain in pairs(self.ValidTerrainTypes[res_ID]) do
-											-- resources that have the terrain hill in their valid terrain table can spawn anywhere on hills.
-											if plotType == PlotTypes.PLOT_HILLS then
-												if validTerrain == "TERRAIN_HILL" then
-													allowed_luxuries[res_ID] = true;
-													--print("Luxury ID#", resourceID, "allowed at this site.");
-													break;
-												end
-											end
-											if TerrainTypes[validTerrain] == terrainType then
-												allowed_luxuries[res_ID] = true;
-												--print("Luxury ID#", resourceID, "allowed at this site.");
-												break;
-											end
-										end
-									end
-									if self.ValidTerrainFeatureTypes[res_ID] ~= nil then							
-										for i, validTerrain in pairs(self.ValidTerrainFeatureTypes[res_ID]) do
-											if TerrainTypes[validTerrain] == terrainType then
-												allowed_luxuries[res_ID] = true;
-												--print("Luxury ID#", resourceID, "allowed at this site.");
-												break;
-											end
-										end
-									end
-								end
-							end
-						end
-						-- MOD.EAP: End	
-					end
-					-- MOD.Barathor: End
-					currentX, currentY = nextX, nextY;
+	
+	local allowed_luxuries = table.fill(false, 99)	-- MOD.Barathor: original = 35; updated to hold higher luxury ID's
+	local plot = Map.GetPlot(x, y)
+	for loopPlot in PlotAreaSweepIterator(plot, radius, SECTOR_NORTH, DIRECTION_CLOCKWISE, DIRECTION_OUTWARDS, CENTRE_EXCLUDE) do
+		if loopPlot:GetResourceType(-1) == -1 and not loopPlot:IsLake() then
+			for i, resource in ipairs(Lekmap_ResourceInfos) do
+				if Lekmap_ResourceInfos[i].ResourceClassType == "RESOURCECLASS_LUXURY"
+				and Lekmap_ResourceInfos:IsValidOn(resource.ID, x, y, true) then
+					allowed_luxuries[resource.ID] = true
 				end
 			end
 		end
 	end
-			
-	return allowed_luxuries
-end
+return allowed_luxuries end
+
 ------------------------------------------------------------------------------
 -- MOD.EAP: New function
 function AssignStartingPlots:CheckResourceEligibility(resource_ID, x, y)
@@ -11546,6 +11472,10 @@ function AssignStartingPlots:PlaceLuxuries()
  	 Plot lists are now generated solely based on valid terrain using xml data.
 	 
 	]]
+
+	PlaceResources:PlaceLuxuries()
+
+
 	local iW, iH = Map.GetGridSize();
 	-- Place Luxuries at civ start locations.
 	local used_randoms_as_secondaries =	table.fill(false, 99);
@@ -11565,7 +11495,8 @@ function AssignStartingPlots:PlaceLuxuries()
 		-- First pass, checking only first two rings with a 50% ratio.
 		local luxury_plot_lists = self:GenerateLuxuryPlotListsAtCitySite(x, y, 2, this_region_luxury, false)
 		local shuf_list = GetShuffledCopyOfTable(luxury_plot_lists)
-		local iNumLeftToPlace = self:PlaceSpecificNumberOfResources(this_region_luxury, 1, iNumToPlace, 0.5, -1, 0, 0, shuf_list);
+		local iNumLeftToPlace = 0
+		--local iNumLeftToPlace = self:PlaceSpecificNumberOfResources(this_region_luxury, 1, iNumToPlace, 0.5, -1, 0, 0, shuf_list);
 
 		if iNumLeftToPlace > 0 then
 			print("-"); print("Unable to place all of this Luxury at the start plot at the first pass. Going second pass.");
@@ -11596,7 +11527,6 @@ function AssignStartingPlots:PlaceLuxuries()
 			end
 		end
 	end
-	
 	-- Place Luxuries at City States.
 	-- Candidates include luxuries exclusive to CS, the lux assigned to this CS's region (if in a region), and the randoms.
 	for city_state = 1, self.iNumCityStates do
@@ -12995,6 +12925,7 @@ function AssignStartingPlots:PlaceStrategicAndBonusResources()
 	--
 	--MOD.EAP: Note: resources_to_place means the following: {Resource ID, Quantity, weighting, minimum impact radius, maximum impact radius}
 	-- Place Strategic resources using major values.
+	--[[
 	local temp_bonus_resource_list = {};
 	local temp_strat_resource_list = {};
 	for resource_ID, resource in pairs(self.ResourceTypes) do
@@ -13024,7 +12955,7 @@ function AssignStartingPlots:PlaceStrategicAndBonusResources()
 
 		self:HandleResourcePreferences(shuff_global_resource_list[resource_ID], resources_to_place, resource_ID, 1)
 	end
-	
+	--]]
 	-- default preferences for strategic resources
 	-- uranium: 33
 	-- oil: 39
@@ -13035,7 +12966,7 @@ function AssignStartingPlots:PlaceStrategicAndBonusResources()
 
 	--temp defaults
 	local uran_amt, horse_amt, oil_amt, iron_amt, coal_amt, alum_amt = 2, 4, 7, 6, 7, 8;
---[[
+
 	print("Map Generation - Placing Strategics");
 	local resources_to_place = {
 	{self.oil_ID, strat_major_amount[self.oil_ID], 65, 1, 4},
@@ -13081,7 +13012,6 @@ function AssignStartingPlots:PlaceStrategicAndBonusResources()
 	local resources_to_place = {
 	{self.horse_ID, horse_amt, 100, 1, 5} };
 	self:ProcessResourceList(10, 1, self.plains_flat_no_feature, resources_to_place)
-	]]
 	self:AddModernMinorStrategicsToCityStates() -- Added spring 2011
 	
 	self:PlaceSmallQuantitiesOfStrategics(35 * bonus_multiplier, self.land_list);

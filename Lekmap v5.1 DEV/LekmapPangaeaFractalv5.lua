@@ -1927,7 +1927,7 @@ function StartPlotSystem()
 	end
 
 	print("Creating start plot database.");
-	local start_plot_database = AssignStartingPlots.Create()
+		start_plot_database = AssignStartingPlots.Create()
 
 	     start_plot_database._lek_prioritize_center = true
 	     -- _lek_stronger_bias 
@@ -1952,6 +1952,9 @@ function StartPlotSystem()
 		MixedBias = MixedBias;
 		};
 	start_plot_database:GenerateRegions(args)
+
+	-- Setup relevant resource information
+	Lekmap_ResourceInfos:Initialize()
 
 	print("Choosing start locations for civilizations.");
 
