@@ -14,6 +14,7 @@ Lekmap_ResourceInfos = {}
 
 function Lekmap_ResourceInfos:Initialize()
 
+    -- Access the game database for resource data
     for resource_data in GameInfo.Resources() do
         local resource_ID = resource_data.ID
         local resourceType = resource_data.Type
