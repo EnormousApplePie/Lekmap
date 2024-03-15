@@ -11271,7 +11271,6 @@ return false end
 function AssignStartingPlots:GenerateLuxuryPlotListsAtCitySite(x, y, radius, luxury_type, bRemoveFeatureIce)
 
 	
-	local plot_list = Lekmap_Utilities.GetPlots.Ring(x, y, radius)
 --[[
 	for _, plot in pairs(plot_list) do
 		local x, y = plot:GetX(), plot:GetY()
@@ -11345,7 +11344,7 @@ function AssignStartingPlots:GenerateLuxuryPlotListsAtCitySite(x, y, radius, lux
 end
 ------------------------------------------------------------------------------
 ------------------------------------------------------------------------------
-function AssignStartingPlots:GenerateLuxuryPlotListsInRegion(region_number, luxury_type)
+function AssignStartingPlots:GenerateLuxuryPlotListsInRegion(region_number)
 	local iW, iH = Map.GetGridSize();
 	-- This function groups a region's plots in to lists, for Luxury resource assignment.
 	local region_data_table = self.regionData[region_number];
@@ -11369,13 +11368,11 @@ function AssignStartingPlots:GenerateLuxuryPlotListsInRegion(region_number, luxu
 			local plotIndex = y * iW + x + 1;
 			local plot = Map.GetPlot(x, y);
 			local area_of_plot = plot:GetArea();
-
-			if self:CheckResourceEligibility(luxury_type, x, y, plotIndex, results_table) then
-				table.insert(results_table, plotIndex);
-			end
+			
+			--Repurposed to just dump all plots that are part of the region in a table to use later
+			table.insert(results_table, plot)
 		end
 	end
-	print("length of results table for:" .. luxury_type .. "is" .. #results_table);
 	return results_table
 end
 ------------------------------------------------------------------------------
@@ -11473,8 +11470,7 @@ function AssignStartingPlots:PlaceLuxuries()
 	 
 	]]
 
-	PlaceResources:PlaceLuxuries()
-
+	Lekmap_PlaceResources:PlaceLuxuries()
 
 	local iW, iH = Map.GetGridSize();
 	-- Place Luxuries at civ start locations.
@@ -11530,6 +11526,8 @@ function AssignStartingPlots:PlaceLuxuries()
 --]]
 	-- Place Luxuries at City States.
 	-- Candidates include luxuries exclusive to CS, the lux assigned to this CS's region (if in a region), and the randoms.
+
+--[[
 	for city_state = 1, self.iNumCityStates do
 		-- First check to see if this city state number received a valid start plot.
 		if self.city_state_validity_table[city_state] == false then
@@ -11617,7 +11615,8 @@ function AssignStartingPlots:PlaceLuxuries()
 			end
 		end
 	end
-		
+--]]
+--[[
 	-- Place Regional Luxuries
 	for region_number, res_ID in ipairs(self.region_luxury_assignment) do
 		print("-"); print("- - -"); print("Attempting to place regional luxury #", res_ID, "in Region#", region_number);
@@ -11668,7 +11667,7 @@ function AssignStartingPlots:PlaceLuxuries()
 			iNumLeftToPlace = self:PlaceSpecificNumberOfResources(res_ID, 1, iNumLeftToPlace, 1, 2, 1, 3, shuf_list);
 		end
 	end
-
+--]]
 	-- Place Random Luxuries
 	if self.iNumTypesRandom > 0 then
 		print("* *"); print("* iNumTypesRandom = ", self.iNumTypesRandom); print("* *");
