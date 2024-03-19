@@ -3202,8 +3202,18 @@ function AssignStartingPlots:PlaceImpactAndRipples(x, y, region_number)
 	self:PlaceResourceImpact(x, y, 3, 3) -- Bonus layer
 	self:PlaceResourceImpact(x, y, 4, 0) -- Fish layer -- MOD.EAP: allow fish to be placed near spawns regardless of additional rules.
 	-- MOD.EAP: place a ripple impact for regional luxuries
-
 	self:PlaceResourceImpactRegionalMod(x, y, 3, 7, region_number)
+
+
+	-- MOD.EAP: Also set layers for the new impact system
+	Lekmap_PlaceResources:PlaceImpact(plot, Lekmap_ResourceImpacts.LUXURY_LAYER.LAND, 3, 3)
+	Lekmap_PlaceResources:PlaceImpact(plot, Lekmap_ResourceImpacts.LUXURY_LAYER.OCEAN, 3, 3)
+	
+	Lekmap_PlaceResources:PlaceImpact(plot, Lekmap_ResourceImpacts.BONUS_LAYER.LAND, 3, 3)
+	Lekmap_PlaceResources:PlaceImpact(plot, Lekmap_ResourceImpacts.BONUS_LAYER.OCEAN, 3, 3)
+	Lekmap_PlaceResources:PlaceImpact(plot, Lekmap_ResourceImpacts.STRATEGIC_LAYER.LAND, 0, 0)
+	Lekmap_PlaceResources:PlaceImpact(plot, Lekmap_ResourceImpacts.STRATEGIC_LAYER.OCEAN, 0, 0)
+
 	if plot:IsCoastalLand() then
 		-- MOD.EAP: SAPHT 10 range city state coastal now in use
 		self:PlaceResourceImpactCoastalMod(x, y, 5, 3, 4) -- MOD: SAPHT 8 range city state coastal
@@ -8735,6 +8745,14 @@ function AssignStartingPlots:PlaceCityStateInRegion(city_state_number, region_nu
 		self:PlaceResourceImpact(x, y, 3, 3) -- Bonus layer
 		self:PlaceResourceImpact(x, y, 4, 3) -- Fish layer
 		self:PlaceResourceImpact(x, y, 7, 3) -- Marble layer
+
+		-- MOD.EAP also place the city state in the new impact system
+		Lekmap_PlaceResources:PlaceImpact(cs_start_plot, Lekmap_ResourceImpacts.LUXURY_LAYER.LAND, 3, 3)
+		Lekmap_PlaceResources:PlaceImpact(cs_start_plot, Lekmap_ResourceImpacts.LUXURY_LAYER.OCEAN, 3, 3)
+		Lekmap_PlaceResources:PlaceImpact(cs_start_plot, Lekmap_ResourceImpacts.BONUS_LAYER.LAND, 3, 3)
+		Lekmap_PlaceResources:PlaceImpact(cs_start_plot, Lekmap_ResourceImpacts.BONUS_LAYER.OCEAN, 3, 3)
+		Lekmap_PlaceResources:PlaceImpact(cs_start_plot, Lekmap_ResourceImpacts.STRATEGIC_LAYER.LAND, 0, 0)
+		Lekmap_PlaceResources:PlaceImpact(cs_start_plot, Lekmap_ResourceImpacts.STRATEGIC_LAYER.OCEAN, 0, 0)
 
 		local impactPlotIndex = y * iW + x + 1;
 		self.playerCollisionData[impactPlotIndex] = true;

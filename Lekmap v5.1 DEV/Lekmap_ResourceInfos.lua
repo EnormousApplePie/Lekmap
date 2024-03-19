@@ -79,6 +79,12 @@ function Lekmap_ResourceInfos:IsValidOn(resource_ID, x, y, bSoftCheck)
 	or plotType == PlotTypes.PLOT_MOUNTAIN
 	or plot:IsLake() then return false end -- might want to add support for lake resources later
 
+    -- for availability sake, only allow coastal luxuries to spawn next to land (otherwise they will be hard to reach)
+    if self[resource_ID].ResourceClassType == "RESOURCECLASS_LUXURY"
+    and plotType == PlotTypes.PLOT_OCEAN
+    and (not plot:IsAdjacentToLand()) then return false end
+
+
     -- softcheck skips any feature/plottype checks for maximum availability
     if bSoftCheck and ((self[resource_ID].ValidTerrains[terrainType]
     or self[resource_ID].ValidTerrains[TerrainTypes["TERRAIN_HILL"]] and plotType == PlotTypes.PLOT_HILLS)
