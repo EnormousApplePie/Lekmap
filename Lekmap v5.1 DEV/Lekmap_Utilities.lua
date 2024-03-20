@@ -25,3 +25,11 @@ function Lekmap_Utilities.GetNumberOfPlayers()
 		end
 	end
 return iNumCivs end
+
+function Lekmap_Utilities.RemoveFromTable(incoming_table, value)
+    for i = #incoming_table, 1, -1 do
+        if incoming_table[i] == value then
+            table.remove(incoming_table, i)
+        end
+    end
+return incoming_table end

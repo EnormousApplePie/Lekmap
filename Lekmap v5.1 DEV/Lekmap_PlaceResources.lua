@@ -132,6 +132,7 @@ return valid_plots end
 ------------------------------------------------------------------------------------------------------------------------
 function Lekmap_PlaceResources:PlaceLuxuries()
 
+    Lekmap_ResourceInfos:AssignLuxuryRoles()
     local amountPlaced = {}
     self:PlaceRegionalsCapital(amountPlaced)
     self:PlaceRegionals(amountPlaced)
@@ -141,10 +142,12 @@ end
 ------------------------------------------------------------------------------------------------------------------------
 function Lekmap_PlaceResources:PlaceRegionalsCapital(amountPlaced)
 
-    for _, region_data in ipairs(start_plot_database.regions_sorted_by_type) do
+    print("Regional Luxury List")
+    for k, v in pairs(Lekmap_ResourceInfos.regional_luxury_list) do
+        print(k, Lekmap_ResourceInfos[v].Type)
+    end
+    for region_number, resource_ID in ipairs(Lekmap_ResourceInfos.regional_luxury_list) do
         local amountToPlace = Map.GetCustomOption(21) or 3
-        local region_number = region_data[1]
-        local region_luxury = region_data[2]
         local center_plotX = start_plot_database.startingPlots[region_number][1]
         local center_plotY = start_plot_database.startingPlots[region_number][2]
         local center_plot = Map.GetPlot(center_plotX, center_plotY)
@@ -155,20 +158,20 @@ function Lekmap_PlaceResources:PlaceRegionalsCapital(amountPlaced)
         for i = 1, 3 do
             if (#valid_plots < amountToPlace) or (amountPlaced[region_number] >= amountToPlace) then
                 amountToPlace = amountToPlace - amountPlaced[region_number]
-                valid_plots = self:GenerateValidPlots(region_luxury, i, center_plotX, center_plotY, true)
+                valid_plots = self:GenerateValidPlots(resource_ID, i, center_plotX, center_plotY, true)
                 local shuffled_list = GetShuffledCopyOfTable(valid_plots)
                 amountPlaced[region_number] = amountPlaced[region_number] + self:PlaceResource(
-                    shuffled_list, region_luxury, amountToPlace, false, true, 1, 1)
+                    shuffled_list, resource_ID, amountToPlace, false, true, 1, 1)
             else break end
         end
-        self:PlaceImpact(center_plot, Lekmap_ResourceImpacts.LUXURY_LAYER.REGIONAL[2], 6, 6)
+        self:PlaceImpact(center_plot, Lekmap_ResourceImpacts.LUXURY_LAYER.REGIONAL[region_number], 6, 6)
     end
 
 return amountPlaced end
 ------------------------------------------------------------------------------------------------------------------------
 function Lekmap_PlaceResources:PlaceRegionals(amountPlaced)
 
-    for region_number, resource_ID in ipairs(start_plot_database.region_luxury_assignment) do
+    for region_number, resource_ID in ipairs(Lekmap_ResourceInfos.regional_luxury_list) do
         local amount_already_placed = amountPlaced[region_number] or 0
         -- amount to place now based on number of major players.
         local amount_players = Lekmap_Utilities.GetNumberOfPlayers()
@@ -223,7 +226,7 @@ function Lekmap_PlaceResources:PlaceCityStateLuxuries()
 			local city_plotX = start_plot_database.cityStatePlots[city_state][1]
 			local city_plotY = start_plot_database.cityStatePlots[city_state][2]
 
-            local luxury_list = start_plot_database.resourceIDs_assigned_to_cs
+            local luxury_list = Lekmap_ResourceInfos.city_state_luxury_list
             local luxury_valid_list = {}
 
             for _, resource_ID in ipairs(luxury_list) do
