@@ -10,11 +10,11 @@ function Lekmap_Utilities.GetPlots.Global()
     local iW, iH = Map.GetGridSize();
     for y = 0, iH - 1 do
         for x = 0, iW - 1 do
-            local plotIndex = y * iW + x + 1;
-            table.insert(plots, plotIndex)
+            local plot = Map.GetPlot(x, y)
+            table.insert(plots, plot)
         end
     end
-end
+return plots end
 
 function Lekmap_Utilities.GetNumberOfPlayers()
     local iNumCivs = 0

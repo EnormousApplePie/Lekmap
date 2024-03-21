@@ -54,6 +54,7 @@ function Lekmap_ResourceInfos:Initialize()
         if GameInfo.Resource_Preferences ~= nil then
             self:InitializePreferences(resource_ID)
         end
+        self:GenerateGlobalResourcePlotLists()
     end
 
 return self end
@@ -110,6 +111,25 @@ function Lekmap_ResourceInfos:IsValidOn(resource_ID, x, y, bSoftCheck)
     end
 
 return false end
+------------------------------------------------------------------------------------------------------------------------
+function Lekmap_ResourceInfos:GenerateGlobalResourcePlotLists()
+	-- This function generates all global plot lists needed for resource distribution.
+	local global_plot_list = Lekmap_Utilities.GetPlots.Global()
+    self.global_resource_plots = {}
+    for _, resource_data in ipairs(self) do
+        print(resource_data.ID, resource_data.Type)
+        if self.global_resource_plots[resource_data.ID] == nil then
+            self.global_resource_plots[resource_data.ID] = {} end
+        for _, plot in ipairs(global_plot_list) do
+            local plotX, plotY = plot:GetX(), plot:GetY()
+            local bSoftCheck = false
+            if resource_data.ResourceClassType == "RESOURCECLASS_LUXURY" then bSoftCheck = true end
+            if self:IsValidOn(resource_data.ID, plotX, plotY, bSoftCheck) then
+                table.insert(self.global_resource_plots[resource_data.ID], plot)
+            end
+        end
+    end
+end
 ------------------------------------------------------------------------------------------------------------------------
 -- /// Assign Luxury Roles functions
 ------------------------------------------------------------------------------------------------------------------------
