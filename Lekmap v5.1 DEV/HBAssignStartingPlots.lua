@@ -9262,7 +9262,7 @@ function AssignStartingPlots:GenerateGlobalResourcePlotLists_NEW()
 						-- Plot has a resource already, do not include it.
 					elseif Lekmap_ResourceInfos:IsValidOn(resource_ID, x, y, true) then
 						
-						table.insert(results_table[resource_ID], i)
+						table.insert(results_table[resource_ID], plot)
 					end		
 				end
 			end
@@ -11686,6 +11686,7 @@ function AssignStartingPlots:PlaceLuxuries()
 		end
 	end
 --]]
+--[[
 	-- Place Random Luxuries
 	if self.iNumTypesRandom > 0 then
 		print("* *"); print("* iNumTypesRandom = ", self.iNumTypesRandom); print("* *");
@@ -11752,7 +11753,8 @@ function AssignStartingPlots:PlaceLuxuries()
 		print("+ Random Luxuries Number Placed:", iNumRandomLuxPlaced);
 		print("+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+"); print("-");
 	end
-
+--]]
+--[[
 	-- For Resource settings other than Sparse, add a second luxury type at start locations.
 	-- This second type will be selected from Random types if possible, CS types if necessary, and other regions' types as a final fallback.
 	-- Marble is included in the types possible to be placed.
@@ -11850,7 +11852,7 @@ function AssignStartingPlots:PlaceLuxuries()
 			end
 		end
 	end
-
+--]]
 	self.realtotalLuxPlacedSoFar = self.totalLuxPlacedSoFar		-- MOD.Barathor: New -- save the real total of luxuries before it gets corrupted with non-luxury additions which use the luxury placement method
 end
 

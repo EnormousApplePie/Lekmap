@@ -125,26 +125,30 @@ function Lekmap_ResourceInfos:AssignLuxuryRoles()
     end
     self.regional_luxury_list = self:AssignRegionalLuxuries(luxury_list)
     self.city_state_luxury_list = self:AssignCityStateLuxuries(luxury_list)
+    self.secondary_luxury_list = self:AssignSecondaryLuxuries(luxury_list)
+    -- Random luxuries should always be assigned last
+    self.random_luxury_list = self:AssignRandomLuxuries(luxury_list)
 
 end
 ------------------------------------------------------------------------------------------------------------------------
-function Lekmap_ResourceInfos:ChooseLuxury(choose_from_list, luxury_list, luxury_rol_list,
+function Lekmap_ResourceInfos:ChooseLuxury(choose_from_list, luxury_list, luxury_role_list,
      x, y , spawnAmount, instance_number, radius)
     local numberOfTries = 0
+    local chosen_luxury
     repeat
         if #choose_from_list <= 0 then break end
-        local chosen_luxury = choose_from_list[Map.Rand(#choose_from_list, "") + 1]
+        chosen_luxury = choose_from_list[Map.Rand(#choose_from_list, "") + 1]
         -- Check if the luxury has enough valid plots to spawn
         local valid_plots = Lekmap_PlaceResources:GenerateValidPlots(
             chosen_luxury, radius, x, y, true)
         if #valid_plots >= spawnAmount then
+            luxury_role_list[instance_number] = chosen_luxury
             luxury_list = Lekmap_Utilities.RemoveFromTable(luxury_list, chosen_luxury)
-            luxury_rol_list[instance_number] = chosen_luxury
         else
             choose_from_list = Lekmap_Utilities.RemoveFromTable(choose_from_list, chosen_luxury)
         end
         numberOfTries = numberOfTries + 1
-    until luxury_rol_list[instance_number] ~= nil or numberOfTries >= #choose_from_list
+    until luxury_role_list[instance_number] ~= nil or numberOfTries >= #choose_from_list
 end
 ------------------------------------------------------------------------------------------------------------------------
 function Lekmap_ResourceInfos:AssignRegionalLuxuries(luxury_list)
@@ -210,8 +214,35 @@ function Lekmap_ResourceInfos:AssignCityStateLuxuries(luxury_list)
 
 return city_state_luxury_list end
 ------------------------------------------------------------------------------------------------------------------------
+function Lekmap_ResourceInfos:AssignSecondaryLuxuries(luxury_list)
+
+    local secondary_luxury_list = {}
+
+    for _, region_data in ipairs(start_plot_database.regions_sorted_by_type) do
+
+        --TODO: Should implement region weights
+        local region_number = region_data[1]
+        local center_plotX = start_plot_database.startingPlots[region_number][1]
+        local center_plotY = start_plot_database.startingPlots[region_number][2]
+        local temporary_luxury_list = {}
+
+        local random_luxury = luxury_list[Map.Rand(#luxury_list, "") + 1]
+        table.insert(temporary_luxury_list, random_luxury)
+
+        self:ChooseLuxury(temporary_luxury_list, luxury_list, secondary_luxury_list,
+        center_plotX, center_plotY, 1, region_number, 3)
+
+    end
+return secondary_luxury_list end
+------------------------------------------------------------------------------------------------------------------------
 function Lekmap_ResourceInfos:AssignRandomLuxuries(luxury_list)
 
     --TODO: make random luxuries use region weights.
     local random_luxury_list = {}
-end
+
+    --put every remaining item in the list
+    for _, resource_ID in ipairs(luxury_list) do
+        table.insert(random_luxury_list, resource_ID)
+        table.remove(luxury_list, resource_ID)
+    end
+return random_luxury_list end

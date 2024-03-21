@@ -137,6 +137,8 @@ function Lekmap_PlaceResources:PlaceLuxuries()
     self:PlaceRegionalsCapital(amountPlaced)
     self:PlaceRegionals(amountPlaced)
     self:PlaceCityStateLuxuries()
+    self:PlaceSecondaryLuxCapital()
+    self:PlaceRandomLuxuries()
 
 end
 ------------------------------------------------------------------------------------------------------------------------
@@ -221,33 +223,62 @@ end
 ------------------------------------------------------------------------------------------------------------------------
 function Lekmap_PlaceResources:PlaceCityStateLuxuries()
 
+    for k, v in pairs(Lekmap_ResourceInfos.city_state_luxury_list) do
+        print(k, Lekmap_ResourceInfos[v].Type)
+    end
     for city_state = 1, start_plot_database.iNumCityStates do
         if start_plot_database.city_state_validity_table[city_state] then
 			local city_plotX = start_plot_database.cityStatePlots[city_state][1]
 			local city_plotY = start_plot_database.cityStatePlots[city_state][2]
 
             local luxury_list = Lekmap_ResourceInfos.city_state_luxury_list
-            local luxury_valid_list = {}
 
-            for _, resource_ID in ipairs(luxury_list) do
-                local candidate_valid_plots = self:GenerateValidPlots(resource_ID, 2, city_plotX, city_plotY)
-                if #candidate_valid_plots > 0 then
-                    table.insert(luxury_valid_list, resource_ID)
-                end
-            end
-
-            if #luxury_valid_list == 0 then
+            if #luxury_list == 0 then
                 print("No valid luxury found for city state: ", city_state)
             else
-                local direcoll = Map.Rand(#luxury_valid_list, "Random luxury")
-                if direcoll == 0 then direcoll = 1 end
-                local chosen_resource_ID = luxury_valid_list[direcoll]
+                local direcoll = Map.Rand(#luxury_list, "Random luxury") + 1
+                print(direcoll, luxury_list[direcoll])
+                local chosen_resource_ID = luxury_list[direcoll]
                 local valid_plots = self:GenerateValidPlots(chosen_resource_ID, 2, city_plotX, city_plotY)
                 --TODO: might want to add a weight system to not have the same luxury in every city state
                 local shuffled_list = GetShuffledCopyOfTable(valid_plots)
                 self:PlaceResource(shuffled_list, chosen_resource_ID, 1, false, true, 1, 1)
             end
         end
+    end
+
+end
+------------------------------------------------------------------------------------------------------------------------
+function Lekmap_PlaceResources:PlaceSecondaryLuxCapital()
+
+    for region_number, resource_ID in ipairs(Lekmap_ResourceInfos.secondary_luxury_list) do
+
+        local center_plotX = start_plot_database.startingPlots[region_number][1]
+        local center_plotY = start_plot_database.startingPlots[region_number][2]
+
+        for i = 2, 3 do
+            local valid_plots = self:GenerateValidPlots(resource_ID, i, center_plotX, center_plotY, true)
+            if #valid_plots > 0 then
+                local shuffled_list = GetShuffledCopyOfTable(valid_plots)
+                self:PlaceResource(shuffled_list, resource_ID, 1, false, true, 1, 1)
+            break end
+        end
+
+    end
+
+end
+------------------------------------------------------------------------------------------------------------------------
+function Lekmap_PlaceResources:PlaceRandomLuxuries()
+
+    --TODO: implement a custom target number for random luxuries
+    local random_luxury_target = 50
+    local amountToPlace = math.ceil(random_luxury_target / #Lekmap_ResourceInfos.random_luxury_list)
+    local amountPlaced = 0
+    for _, resource_ID in ipairs(Lekmap_ResourceInfos.random_luxury_list) do
+        if amountPlaced >= random_luxury_target then break end
+        local valid_plots = start_plot_database.global_resource_plot_lists[resource_ID]
+        local shuffled_list = GetShuffledCopyOfTable(valid_plots)
+        amountPlaced = amountPlaced + self:PlaceResource(shuffled_list, resource_ID, amountToPlace, true, true, 3, 4)
     end
 
 end
