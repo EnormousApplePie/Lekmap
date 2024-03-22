@@ -223,6 +223,7 @@ end
 ------------------------------------------------------------------------------------------------------------------------
 function Lekmap_PlaceResources:PlaceCityStateLuxuries()
 
+    print("City-State Assigned Luxuries")
     for k, v in pairs(Lekmap_ResourceInfos.city_state_luxury_list) do
         print(k, Lekmap_ResourceInfos[v].Type)
     end
@@ -232,17 +233,15 @@ function Lekmap_PlaceResources:PlaceCityStateLuxuries()
 			local city_plotY = start_plot_database.cityStatePlots[city_state][2]
 
             local luxury_list = Lekmap_ResourceInfos.city_state_luxury_list
-
-            if #luxury_list == 0 then
-                print("No valid luxury found for city state: ", city_state)
+            local resource_ID = luxury_list[city_state]
+            print(city_state, resource_ID)
+            if #luxury_list == 0 or resource_ID == nil then
+                print("No valid luxury found for city state: ", city_state, "or city state is not valid")
             else
-                local direcoll = Map.Rand(#luxury_list, "Random luxury") + 1
-                print(direcoll, luxury_list[direcoll])
-                local chosen_resource_ID = luxury_list[direcoll]
-                local valid_plots = self:GenerateValidPlots(chosen_resource_ID, 2, city_plotX, city_plotY)
+                local valid_plots = self:GenerateValidPlots(resource_ID, 2, city_plotX, city_plotY, true)
                 --TODO: might want to add a weight system to not have the same luxury in every city state
                 local shuffled_list = GetShuffledCopyOfTable(valid_plots)
-                self:PlaceResource(shuffled_list, chosen_resource_ID, 1, false, true, 1, 1)
+                self:PlaceResource(shuffled_list, resource_ID, 1, false, true, 1, 1)
             end
         end
     end
@@ -251,6 +250,10 @@ end
 ------------------------------------------------------------------------------------------------------------------------
 function Lekmap_PlaceResources:PlaceSecondaryLuxCapital()
 
+    print("Secondary Luxury List")
+    for k, v in pairs(Lekmap_ResourceInfos.secondary_luxury_list) do
+        print(k, Lekmap_ResourceInfos[v].Type)
+    end
     for region_number, resource_ID in ipairs(Lekmap_ResourceInfos.secondary_luxury_list) do
 
         local center_plotX = start_plot_database.startingPlots[region_number][1]

@@ -188,7 +188,6 @@ function Lekmap_ResourceInfos:AssignRegionalLuxuries(luxury_list)
 
         for i = #temporary_luxury_list, 1, -1 do
             local resource_ID = temporary_luxury_list[i]
-            print(self[resource_ID].Type, self[resource_ID].NoRegional)
             -- remove any luxuries that are not allowed to be a regional luxury based on the map option
             if Map.GetCustomOption(14) == 1 and self[resource_ID].NoRegional then
                 table.remove(temporary_luxury_list, i)
@@ -213,18 +212,19 @@ return regional_luxury_list end
 ------------------------------------------------------------------------------------------------------------------------
 function Lekmap_ResourceInfos:AssignCityStateLuxuries(luxury_list)
 
+    print(start_plot_database.iNumCityStates / 2, "city states")
+    local temporary_luxury_list = {}
+    -- pool of luxuries for city-states to choose from. Based on the number of city-states, max 8 luxuries
+     for _ = 1, math.min(8, math.ceil(start_plot_database.iNumCityStates / 2)) do
+         local random_luxury = luxury_list[Map.Rand(#luxury_list, "") + 1]
+         table.insert(temporary_luxury_list, random_luxury)
+     end
+
     local city_state_luxury_list = {}
     for city_state = 1, start_plot_database.iNumCityStates do
         if start_plot_database.city_state_validity_table[city_state] then
 			local city_plotX = start_plot_database.cityStatePlots[city_state][1]
 			local city_plotY = start_plot_database.cityStatePlots[city_state][2]
-            local temporary_luxury_list = {}
-
-           -- pool of luxuries for city-states to choose from. Based on the number of city-states, max 8 luxuries
-            for _ = 1, math.min(8, math.ceil(start_plot_database.iNumCityStates / 2)) do
-                local random_luxury = luxury_list[Map.Rand(#luxury_list, "") + 1]
-                table.insert(temporary_luxury_list, random_luxury)
-            end
 
             self:ChooseLuxury(temporary_luxury_list, luxury_list, city_state_luxury_list,
             city_plotX, city_plotY, 1, city_state, 2)
@@ -244,10 +244,7 @@ function Lekmap_ResourceInfos:AssignSecondaryLuxuries(luxury_list)
         local region_number = region_data[1]
         local center_plotX = start_plot_database.startingPlots[region_number][1]
         local center_plotY = start_plot_database.startingPlots[region_number][2]
-        local temporary_luxury_list = {}
-
-        local random_luxury = luxury_list[Map.Rand(#luxury_list, "") + 1]
-        table.insert(temporary_luxury_list, random_luxury)
+        local temporary_luxury_list = luxury_list
 
         self:ChooseLuxury(temporary_luxury_list, luxury_list, secondary_luxury_list,
         center_plotX, center_plotY, 1, region_number, 3)
