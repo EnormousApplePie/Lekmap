@@ -24,9 +24,9 @@ include("NaturalWondersCustomMethods");
 -- MOD.EAP: Includes. Also run the config file.
 ------------------------------------------------------------------------------
 include("Lekmap_Config.lua")
-include("Lekmap_ResourceInfos.lua")
-include("Lekmap_Utilities.lua")
-include("Lekmap_PlaceResources.lua")
+include("lekmap_resource_infos.lua")
+include("lekmap_utilities.lua")
+include("lekmap_place_resources.lua")
 include("PlotIterators.lua")
 runConfig()
 
@@ -3206,13 +3206,13 @@ function AssignStartingPlots:PlaceImpactAndRipples(x, y, region_number)
 
 
 	-- MOD.EAP: Also set layers for the new impact system
-	Lekmap_PlaceResources:PlaceImpact(plot, Lekmap_ResourceImpacts.LUXURY_LAYER.LAND, 3, 3)
-	Lekmap_PlaceResources:PlaceImpact(plot, Lekmap_ResourceImpacts.LUXURY_LAYER.OCEAN, 3, 3)
+	LekmapPlaceResources:place_impact(plot, lekmap_resource_impacts.LUXURY_LAYER.LAND, 3, 3)
+	LekmapPlaceResources:place_impact(plot, lekmap_resource_impacts.LUXURY_LAYER.OCEAN, 3, 3)
 	
-	Lekmap_PlaceResources:PlaceImpact(plot, Lekmap_ResourceImpacts.BONUS_LAYER.LAND, 3, 3)
-	Lekmap_PlaceResources:PlaceImpact(plot, Lekmap_ResourceImpacts.BONUS_LAYER.OCEAN, 3, 3)
-	Lekmap_PlaceResources:PlaceImpact(plot, Lekmap_ResourceImpacts.STRATEGIC_LAYER.LAND, 0, 0)
-	Lekmap_PlaceResources:PlaceImpact(plot, Lekmap_ResourceImpacts.STRATEGIC_LAYER.OCEAN, 0, 0)
+	LekmapPlaceResources:place_impact(plot, lekmap_resource_impacts.BONUS_LAYER.LAND, 3, 3)
+	LekmapPlaceResources:place_impact(plot, lekmap_resource_impacts.BONUS_LAYER.OCEAN, 3, 3)
+	LekmapPlaceResources:place_impact(plot, lekmap_resource_impacts.STRATEGIC_LAYER.LAND, 0, 0)
+	LekmapPlaceResources:place_impact(plot, lekmap_resource_impacts.STRATEGIC_LAYER.OCEAN, 0, 0)
 
 	if plot:IsCoastalLand() then
 		-- MOD.EAP: SAPHT 10 range city state coastal now in use
@@ -8747,12 +8747,12 @@ function AssignStartingPlots:PlaceCityStateInRegion(city_state_number, region_nu
 		self:PlaceResourceImpact(x, y, 7, 3) -- Marble layer
 
 		-- MOD.EAP also place the city state in the new impact system
-		Lekmap_PlaceResources:PlaceImpact(cs_start_plot, Lekmap_ResourceImpacts.LUXURY_LAYER.LAND, 3, 3)
-		Lekmap_PlaceResources:PlaceImpact(cs_start_plot, Lekmap_ResourceImpacts.LUXURY_LAYER.OCEAN, 3, 3)
-		Lekmap_PlaceResources:PlaceImpact(cs_start_plot, Lekmap_ResourceImpacts.BONUS_LAYER.LAND, 3, 3)
-		Lekmap_PlaceResources:PlaceImpact(cs_start_plot, Lekmap_ResourceImpacts.BONUS_LAYER.OCEAN, 3, 3)
-		Lekmap_PlaceResources:PlaceImpact(cs_start_plot, Lekmap_ResourceImpacts.STRATEGIC_LAYER.LAND, 0, 0)
-		Lekmap_PlaceResources:PlaceImpact(cs_start_plot, Lekmap_ResourceImpacts.STRATEGIC_LAYER.OCEAN, 0, 0)
+		LekmapPlaceResources:place_impact(cs_start_plot, lekmap_resource_impacts.LUXURY_LAYER.LAND, 3, 3)
+		LekmapPlaceResources:place_impact(cs_start_plot, lekmap_resource_impacts.LUXURY_LAYER.OCEAN, 3, 3)
+		LekmapPlaceResources:place_impact(cs_start_plot, lekmap_resource_impacts.BONUS_LAYER.LAND, 3, 3)
+		LekmapPlaceResources:place_impact(cs_start_plot, lekmap_resource_impacts.BONUS_LAYER.OCEAN, 3, 3)
+		LekmapPlaceResources:place_impact(cs_start_plot, lekmap_resource_impacts.STRATEGIC_LAYER.LAND, 0, 0)
+		LekmapPlaceResources:place_impact(cs_start_plot, lekmap_resource_impacts.STRATEGIC_LAYER.OCEAN, 0, 0)
 
 		local impactPlotIndex = y * iW + x + 1;
 		self.playerCollisionData[impactPlotIndex] = true;
@@ -9260,7 +9260,7 @@ function AssignStartingPlots:GenerateGlobalResourcePlotLists_NEW()
 						-- Do not process this plot!
 					elseif plot:GetResourceType(-1) ~= -1 then
 						-- Plot has a resource already, do not include it.
-					elseif Lekmap_ResourceInfos:IsValidOn(resource_ID, x, y, true) then
+					elseif LekmapResourceInfos:is_valid_on(resource_ID, x, y, true) then
 						
 						table.insert(results_table[resource_ID], plot)
 					end		
@@ -11207,9 +11207,9 @@ function AssignStartingPlots:GetListOfAllowableLuxuriesAtCitySite(x, y, radius)
 	local plot = Map.GetPlot(x, y)
 	for loopPlot in PlotAreaSweepIterator(plot, radius, SECTOR_NORTH, DIRECTION_CLOCKWISE, DIRECTION_OUTWARDS, CENTRE_EXCLUDE) do
 		if loopPlot:GetResourceType(-1) == -1 and not loopPlot:IsLake() then
-			for i, resource in ipairs(Lekmap_ResourceInfos) do
-				if Lekmap_ResourceInfos[i].ResourceClassType == "RESOURCECLASS_LUXURY"
-				and Lekmap_ResourceInfos:IsValidOn(resource.ID, x, y, true) then
+			for i, resource in ipairs(LekmapResourceInfos) do
+				if LekmapResourceInfos[i].ResourceClassType == "RESOURCECLASS_LUXURY"
+				and LekmapResourceInfos:is_valid_on(resource.ID, x, y, true) then
 					allowed_luxuries[resource.ID] = true
 				end
 			end
@@ -11298,7 +11298,7 @@ function AssignStartingPlots:GenerateLuxuryPlotListsAtCitySite(x, y, radius, lux
 			if plot:GetFeatureType() == FeatureTypes.FEATURE_ICE then
 				plot:SetFeatureType(FeatureTypes.NO_FEATURE, -1)
 			end
-		elseif Lekmap_ResourceInfos:IsValidOn(luxury_type, x, y, true) then
+		elseif LekmapResourceInfos:is_valid_on(luxury_type, x, y, true) then
 			--table.insert(results_table, plotIndex)
 		end
 	end
@@ -11488,7 +11488,7 @@ function AssignStartingPlots:PlaceLuxuries()
 	 
 	]]
 
-	Lekmap_PlaceResources:PlaceLuxuries()
+	LekmapPlaceResources:place_luxuries()
 
 	local iW, iH = Map.GetGridSize();
 	-- Place Luxuries at civ start locations.
