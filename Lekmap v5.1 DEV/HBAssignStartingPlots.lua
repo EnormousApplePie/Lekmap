@@ -24,9 +24,9 @@ include("NaturalWondersCustomMethods");
 -- MOD.EAP: Includes. Also run the config file.
 ------------------------------------------------------------------------------
 include("Lekmap_Config.lua")
-include("Lekmap_ResourceInfos.lua")
-include("Lekmap_Utilities.lua")
-include("Lekmap_PlaceResources.lua")
+include("lekmap_resource_infos.lua")
+include("lekmap_utilities.lua")
+include("lekmap_place_resources.lua")
 include("PlotIterators.lua")
 runConfig()
 
@@ -3202,8 +3202,18 @@ function AssignStartingPlots:PlaceImpactAndRipples(x, y, region_number)
 	self:PlaceResourceImpact(x, y, 3, 3) -- Bonus layer
 	self:PlaceResourceImpact(x, y, 4, 0) -- Fish layer -- MOD.EAP: allow fish to be placed near spawns regardless of additional rules.
 	-- MOD.EAP: place a ripple impact for regional luxuries
-
 	self:PlaceResourceImpactRegionalMod(x, y, 3, 7, region_number)
+
+
+	-- MOD.EAP: Also set layers for the new impact system
+	LekmapPlaceResources:place_impact(plot, lekmap_resource_impacts.LUXURY_LAYER.LAND, 3, 3)
+	LekmapPlaceResources:place_impact(plot, lekmap_resource_impacts.LUXURY_LAYER.OCEAN, 3, 3)
+	
+	LekmapPlaceResources:place_impact(plot, lekmap_resource_impacts.BONUS_LAYER.LAND, 3, 3)
+	LekmapPlaceResources:place_impact(plot, lekmap_resource_impacts.BONUS_LAYER.OCEAN, 3, 3)
+	LekmapPlaceResources:place_impact(plot, lekmap_resource_impacts.STRATEGIC_LAYER.LAND, 0, 0)
+	LekmapPlaceResources:place_impact(plot, lekmap_resource_impacts.STRATEGIC_LAYER.OCEAN, 0, 0)
+
 	if plot:IsCoastalLand() then
 		-- MOD.EAP: SAPHT 10 range city state coastal now in use
 		self:PlaceResourceImpactCoastalMod(x, y, 5, 3, 4) -- MOD: SAPHT 8 range city state coastal
@@ -8736,6 +8746,14 @@ function AssignStartingPlots:PlaceCityStateInRegion(city_state_number, region_nu
 		self:PlaceResourceImpact(x, y, 4, 3) -- Fish layer
 		self:PlaceResourceImpact(x, y, 7, 3) -- Marble layer
 
+		-- MOD.EAP also place the city state in the new impact system
+		LekmapPlaceResources:place_impact(cs_start_plot, lekmap_resource_impacts.LUXURY_LAYER.LAND, 3, 3)
+		LekmapPlaceResources:place_impact(cs_start_plot, lekmap_resource_impacts.LUXURY_LAYER.OCEAN, 3, 3)
+		LekmapPlaceResources:place_impact(cs_start_plot, lekmap_resource_impacts.BONUS_LAYER.LAND, 3, 3)
+		LekmapPlaceResources:place_impact(cs_start_plot, lekmap_resource_impacts.BONUS_LAYER.OCEAN, 3, 3)
+		LekmapPlaceResources:place_impact(cs_start_plot, lekmap_resource_impacts.STRATEGIC_LAYER.LAND, 0, 0)
+		LekmapPlaceResources:place_impact(cs_start_plot, lekmap_resource_impacts.STRATEGIC_LAYER.OCEAN, 0, 0)
+
 		local impactPlotIndex = y * iW + x + 1;
 		self.playerCollisionData[impactPlotIndex] = true;
 		--print("-"); print("City State", city_state_number, "has been started at Plot", x, y, "in Region#", region_number);
@@ -9242,9 +9260,9 @@ function AssignStartingPlots:GenerateGlobalResourcePlotLists_NEW()
 						-- Do not process this plot!
 					elseif plot:GetResourceType(-1) ~= -1 then
 						-- Plot has a resource already, do not include it.
-					elseif Lekmap_ResourceInfos:IsValidOn(resource_ID, x, y, true) then
+					elseif LekmapResourceInfos:is_valid_on(resource_ID, x, y, true) then
 						
-						table.insert(results_table[resource_ID], i)
+						table.insert(results_table[resource_ID], plot)
 					end		
 				end
 			end
@@ -11189,9 +11207,9 @@ function AssignStartingPlots:GetListOfAllowableLuxuriesAtCitySite(x, y, radius)
 	local plot = Map.GetPlot(x, y)
 	for loopPlot in PlotAreaSweepIterator(plot, radius, SECTOR_NORTH, DIRECTION_CLOCKWISE, DIRECTION_OUTWARDS, CENTRE_EXCLUDE) do
 		if loopPlot:GetResourceType(-1) == -1 and not loopPlot:IsLake() then
-			for i, resource in ipairs(Lekmap_ResourceInfos) do
-				if Lekmap_ResourceInfos[i].ResourceClassType == "RESOURCECLASS_LUXURY"
-				and Lekmap_ResourceInfos:IsValidOn(resource.ID, x, y, true) then
+			for i, resource in ipairs(LekmapResourceInfos) do
+				if LekmapResourceInfos[i].ResourceClassType == "RESOURCECLASS_LUXURY"
+				and LekmapResourceInfos:is_valid_on(resource.ID, x, y, true) then
 					allowed_luxuries[resource.ID] = true
 				end
 			end
@@ -11271,7 +11289,6 @@ return false end
 function AssignStartingPlots:GenerateLuxuryPlotListsAtCitySite(x, y, radius, luxury_type, bRemoveFeatureIce)
 
 	
-	local plot_list = Lekmap_Utilities.GetPlots.Ring(x, y, radius)
 --[[
 	for _, plot in pairs(plot_list) do
 		local x, y = plot:GetX(), plot:GetY()
@@ -11281,7 +11298,7 @@ function AssignStartingPlots:GenerateLuxuryPlotListsAtCitySite(x, y, radius, lux
 			if plot:GetFeatureType() == FeatureTypes.FEATURE_ICE then
 				plot:SetFeatureType(FeatureTypes.NO_FEATURE, -1)
 			end
-		elseif Lekmap_ResourceInfos:IsValidOn(luxury_type, x, y, true) then
+		elseif LekmapResourceInfos:is_valid_on(luxury_type, x, y, true) then
 			--table.insert(results_table, plotIndex)
 		end
 	end
@@ -11345,7 +11362,7 @@ function AssignStartingPlots:GenerateLuxuryPlotListsAtCitySite(x, y, radius, lux
 end
 ------------------------------------------------------------------------------
 ------------------------------------------------------------------------------
-function AssignStartingPlots:GenerateLuxuryPlotListsInRegion(region_number, luxury_type)
+function AssignStartingPlots:GenerateLuxuryPlotListsInRegion(region_number)
 	local iW, iH = Map.GetGridSize();
 	-- This function groups a region's plots in to lists, for Luxury resource assignment.
 	local region_data_table = self.regionData[region_number];
@@ -11369,13 +11386,11 @@ function AssignStartingPlots:GenerateLuxuryPlotListsInRegion(region_number, luxu
 			local plotIndex = y * iW + x + 1;
 			local plot = Map.GetPlot(x, y);
 			local area_of_plot = plot:GetArea();
-
-			if self:CheckResourceEligibility(luxury_type, x, y, plotIndex, results_table) then
-				table.insert(results_table, plotIndex);
-			end
+			
+			--Repurposed to just dump all plots that are part of the region in a table to use later
+			table.insert(results_table, plot)
 		end
 	end
-	print("length of results table for:" .. luxury_type .. "is" .. #results_table);
 	return results_table
 end
 ------------------------------------------------------------------------------
@@ -11473,8 +11488,7 @@ function AssignStartingPlots:PlaceLuxuries()
 	 
 	]]
 
-	PlaceResources:PlaceLuxuries()
-
+	LekmapPlaceResources:place_luxuries()
 
 	local iW, iH = Map.GetGridSize();
 	-- Place Luxuries at civ start locations.
@@ -11530,6 +11544,8 @@ function AssignStartingPlots:PlaceLuxuries()
 --]]
 	-- Place Luxuries at City States.
 	-- Candidates include luxuries exclusive to CS, the lux assigned to this CS's region (if in a region), and the randoms.
+
+--[[
 	for city_state = 1, self.iNumCityStates do
 		-- First check to see if this city state number received a valid start plot.
 		if self.city_state_validity_table[city_state] == false then
@@ -11617,7 +11633,8 @@ function AssignStartingPlots:PlaceLuxuries()
 			end
 		end
 	end
-		
+--]]
+--[[
 	-- Place Regional Luxuries
 	for region_number, res_ID in ipairs(self.region_luxury_assignment) do
 		print("-"); print("- - -"); print("Attempting to place regional luxury #", res_ID, "in Region#", region_number);
@@ -11668,7 +11685,8 @@ function AssignStartingPlots:PlaceLuxuries()
 			iNumLeftToPlace = self:PlaceSpecificNumberOfResources(res_ID, 1, iNumLeftToPlace, 1, 2, 1, 3, shuf_list);
 		end
 	end
-
+--]]
+--[[
 	-- Place Random Luxuries
 	if self.iNumTypesRandom > 0 then
 		print("* *"); print("* iNumTypesRandom = ", self.iNumTypesRandom); print("* *");
@@ -11735,7 +11753,8 @@ function AssignStartingPlots:PlaceLuxuries()
 		print("+ Random Luxuries Number Placed:", iNumRandomLuxPlaced);
 		print("+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+"); print("-");
 	end
-
+--]]
+--[[
 	-- For Resource settings other than Sparse, add a second luxury type at start locations.
 	-- This second type will be selected from Random types if possible, CS types if necessary, and other regions' types as a final fallback.
 	-- Marble is included in the types possible to be placed.
@@ -11833,7 +11852,7 @@ function AssignStartingPlots:PlaceLuxuries()
 			end
 		end
 	end
-
+--]]
 	self.realtotalLuxPlacedSoFar = self.totalLuxPlacedSoFar		-- MOD.Barathor: New -- save the real total of luxuries before it gets corrupted with non-luxury additions which use the luxury placement method
 end
 

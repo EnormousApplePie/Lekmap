@@ -1954,7 +1954,7 @@ function StartPlotSystem()
 	start_plot_database:GenerateRegions(args)
 
 	-- Setup relevant resource information
-	Lekmap_ResourceInfos:Initialize()
+	LekmapResourceInfos:initialize()
 
 	print("Choosing start locations for civilizations.");
 
