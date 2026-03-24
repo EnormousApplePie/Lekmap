@@ -15,12 +15,12 @@
 --      Lekmap_HexUtil.lua        (PlotRingIterator)
 --      Lekmap_Luxuries.lua       (luxury placement, loaded separately)
 --      Lekmap_Strategics.lua     (strategic placement, loaded separately)
---      Lekmap_Bonus.lua          (bonus + fish placement, loaded separately)
+--      Lekmap_Bonus.lua          (start bonuses + world/sea scatter; loaded in MapGenerator)
 --  Engine globals: Map, PlotTypes, TerrainTypes, FeatureTypes, GameInfo,
 --                  ResourceUsageTypes, Game
 ------------------------------------------------------------------------------
 --luacheck: globals Lekmap_Resources Lekmap_ResourceDefs Lekmap_Impact Lekmap_Regions
---luacheck: globals Lekmap_Spawns Lekmap_HexUtil Lekmap_Luxuries Lekmap_Strategics Lekmap_Bonus
+--luacheck: globals Lekmap_Spawns Lekmap_HexUtil Lekmap_Luxuries Lekmap_Strategics Lekmap_Bonus include
 --luacheck: globals Lekmap_Constants
 --luacheck: globals Map PlotTypes TerrainTypes FeatureTypes GameInfo ResourceUsageTypes Game
 
@@ -143,15 +143,12 @@ function Lekmap_Resources.IsValidPlotForResource(entry, def)
     -- Must not be mountain.
     if entry.is_mountain then return false end
 
-    -- Check hills/flatlands eligibility.
-    if entry.is_hill and not def.hills then return false end
-    if entry.is_flat and not def.flatlands then return false end
-
-    -- Water plots: only valid if TERRAIN_COAST is in the terrains list.
+    -- Shallow coast water (before hill/flat). Same idea as land + empty def.features: only
+    -- NO_FEATURE tiles qualify — atolls, ice, etc. are features and are not listed on FISH etc.
     if entry.is_water then
         if entry.is_lake then return false end
         if not entry.is_coast then return false end
-        -- Check if coast terrain is explicitly listed.
+        if entry.feature_type ~= FeatureTypes.NO_FEATURE then return false end
         for _, t in ipairs(def.terrains) do
             if TERRAIN_LOOKUP[t] == TerrainTypes.TERRAIN_COAST then
                 return true
@@ -159,6 +156,10 @@ function Lekmap_Resources.IsValidPlotForResource(entry, def)
         end
         return false
     end
+
+    -- Land: hills/flatlands eligibility.
+    if entry.is_hill and not def.hills then return false end
+    if entry.is_flat and not def.flatlands then return false end
 
     -- Land plot with a feature.
     if entry.feature_type ~= FeatureTypes.NO_FEATURE then
@@ -590,6 +591,9 @@ function Lekmap_Resources.PlaceOne(x, y, resource_key, quantity)
 
     plot:SetResourceType(active_resource.id, quantity or 0)
 
+    -- Jungle/forest etc. when RESOURCE_DEFS sets force_valid_feature (matches PlaceSpecificNumber / scatter).
+    Lekmap_Resources.ForceFeatureAfterPlacement(resource_key, x, y, nil)
+
     -- Update tracking.
     amounts_placed[active_resource.id] = (amounts_placed[active_resource.id] or 0) + (quantity > 0 and quantity or 1)
     if active_resource.def.class == "luxury" then
@@ -613,6 +617,58 @@ function Lekmap_Resources.PlaceOne(x, y, resource_key, quantity)
         plot_cache[idx].has_resource = true
     end
 
+    return true
+end
+
+------------------------------------------------------------------------------
+--- Place one bonus scatter instance at a cached plot index (world / regional scatter).
+--  Updates amounts_placed, BONUS impact, plot_cache.has_resource, optional feature force.
+--
+--  @param plot_index            1-based index into plot_cache
+--  @param resource_key          e.g. "WHEAT"
+--  @param min_radius            BONUS impact min ripple radius
+--  @param max_radius            BONUS impact max ripple radius
+--  @param options               optional { ignore_bonus_impact = bool }
+--  @return                      true if placed
+------------------------------------------------------------------------------
+function Lekmap_Resources.PlaceScatterBonusAtPlotIndex(plot_index, resource_key, min_radius, max_radius, options)
+    options = options or {}
+    local active = Lekmap_ResourceDefs.active and Lekmap_ResourceDefs.active[resource_key]
+    if not active then
+        return false
+    end
+    local entry = plot_cache[plot_index]
+    if not entry or entry.has_resource then
+        return false
+    end
+    local x, y = entry.x, entry.y
+    if Lekmap_Resources.IsCollision(x, y) then
+        return false
+    end
+    local IMPACT_LAYER = Lekmap_Constants.IMPACT_LAYER
+    if not options.ignore_bonus_impact and Lekmap_Impact.IsImpacted(IMPACT_LAYER.BONUS, x, y) then
+        return false
+    end
+    local plot = Map.GetPlot(x, y)
+    if not plot or plot:GetResourceType(-1) ~= -1 then
+        return false
+    end
+
+    plot:SetResourceType(active.id, 1)
+    amounts_placed[active.id] = (amounts_placed[active.id] or 0) + 1
+    if Game.GetResourceUsageType(active.id) == ResourceUsageTypes.RESOURCEUSAGE_LUXURY then
+        total_lux_placed = total_lux_placed + 1
+    end
+
+    local radius_add = 0
+    if max_radius > min_radius then
+        radius_add = Map.Rand(max_radius - min_radius + 1, "Scatter bonus impact radius")
+    end
+    Lekmap_Impact.PlaceImpact(IMPACT_LAYER.BONUS, x, y, min_radius + radius_add)
+    Lekmap_Resources.ForceFeatureAfterPlacement(resource_key, x, y, nil)
+    if plot_cache[plot_index] then
+        plot_cache[plot_index].has_resource = true
+    end
     return true
 end
 
@@ -957,9 +1013,13 @@ end
 --
 --  @param args  table:
 --      resource_setting   (number) density 1-10, default 5
---      start_quality      (number) start quality option
+--      startingLuxuries / starting_luxuries (number) major start regional lux count (default 3)
+--      additionalStartLuxuries / additional_start_luxuries (number) extra near start (default 1)
+--      guaranteedStrategics / guaranteed_strategics (bool) stored for strategics (default true)
+--      start_quality      (legacy; ignored by new Lekmap_Luxuries — use starting luxuries args)
 --      strategic_balance  (bool)   guarantee strategics near starts
---      coast_lux          (bool)   guarantee coastal luxuries
+--      coastLuxMode / coast_lux_mode (number) Option 17 — see Lekmap_Spawns + Lekmap_Luxuries
+--      additionalCoastalLuxuries (number) Option 24 — extra regional scatter for coastal lux
 ------------------------------------------------------------------------------
 function Lekmap_Resources.PlaceAll(args)
     args = args or {}
@@ -976,9 +1036,31 @@ function Lekmap_Resources.PlaceAll(args)
     print("Lekmap_Resources: Phase 2 - Strategic placement.")
     Lekmap_Strategics.PlaceAll(args)
 
-    -- Phase 3: Bonus + fish placement.
+    -- Phase 3: Regional start bonuses (major civs + city-states).
     print("Lekmap_Resources: Phase 3 - Bonus placement.")
-    Lekmap_Bonus.PlaceAll(args)
+    if not Lekmap_Bonus or not Lekmap_Bonus.PlaceAllMajorStartBonuses then
+        include("Lekmap_Bonus")
+    end
+    if Lekmap_Bonus and Lekmap_Bonus.PlaceAllMajorStartBonuses then
+        print("Lekmap_Bonus: Placing major start bonuses.")
+        Lekmap_Bonus.PlaceAllMajorStartBonuses()
+    else
+        print("Lekmap_Resources: ERROR — Lekmap_Bonus not loaded or missing PlaceAllMajorStartBonuses.")
+    end
+    if Lekmap_Bonus and Lekmap_Bonus.PlaceAllCityStateStartBonuses then
+        print("Lekmap_Bonus: Placing city-state start bonuses.")
+        Lekmap_Bonus.PlaceAllCityStateStartBonuses()
+    end
+
+    local resource_setting_scatter = args.resource_setting or Lekmap_Resources.GetResourceSetting() or 5
+    if Lekmap_Bonus and Lekmap_Bonus.PlaceWorldScatter then
+        print("Lekmap_Bonus: World scatter (land bonuses).")
+        Lekmap_Bonus.PlaceWorldScatter(resource_setting_scatter)
+    end
+    if Lekmap_Bonus and Lekmap_Bonus.PlaceSeaResourceScatter then
+        print("Lekmap_Bonus: Sea resource scatter.")
+        Lekmap_Bonus.PlaceSeaResourceScatter(resource_setting_scatter)
+    end
 
     -- Fix graphics.
     Lekmap_Resources.FixResourceGraphics()

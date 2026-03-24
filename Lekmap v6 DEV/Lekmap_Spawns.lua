@@ -34,11 +34,14 @@ local plot_data_is_next_to_coast   = {}
 local plot_data_is_three_from_coast = {}
 
 --- Per-region condition flags, set after start plots are chosen.
---- start_conditions[region_index] = { along_ocean, next_to_lake, is_river, near_river, near_mountain, forest_count, jungle_count }
+--- start_conditions[region_index] = { along_ocean, along_inland_sea_coast, next_to_lake, ... }
 local start_conditions = {}
 
 --- Chosen start plots: start_plots[region_index] = { x, y, score }
 local start_plots = {}
+
+--- After ChooseLocations: region_to_player[region_index] = major-civ player ID (for debug / tools).
+local region_to_player = {}
 
 --- Stored settings from map script.
 local settings = {}
@@ -67,6 +70,31 @@ local DEFAULT_MIDDLE_BIAS = 50
 
 --- Score awarded when a candidate plot is adjacent to salt water.
 local COASTAL_SCORE_BONUS = 40
+--- Nudge starts toward plots that can receive guaranteed coastal lux (WHALE/CRAB/PEARLS) per Option 17.
+local COAST_LUX_PREFERENCE_BONUS = 28
+
+------------------------------------------------------------------------------
+--- Extra score when the start matches Option 17 coastal-luxury coast rules.
+------------------------------------------------------------------------------
+local function CoastalLuxPreferenceBonus(plot, plot_index)
+    local clm = settings.coast_lux_mode or 2
+    if clm == 2 or clm == 5 then
+        return 0
+    end
+    local ocean = plot_data_is_coastal[plot_index] == true
+    local inland_coast = plot:IsCoastalLand() and plot:IsFreshWater()
+    if clm == 1 then
+        return ocean and COAST_LUX_PREFERENCE_BONUS or 0
+    elseif clm == 3 then
+        if ocean then return COAST_LUX_PREFERENCE_BONUS end
+        if settings.allow_inland_sea and inland_coast then return COAST_LUX_PREFERENCE_BONUS end
+        return 0
+    elseif clm == 4 then
+        if inland_coast and not ocean then return COAST_LUX_PREFERENCE_BONUS end
+        return 0
+    end
+    return 0
+end
 
 --- Weighted score look-up tables for inner ring totals.
 local WEIGHTED_FOOD_INNER = { [0] = 0, 8, 14, 19, 22, 24, 25 }
@@ -408,6 +436,7 @@ function Lekmap_Spawns.EvaluateCandidate(x, y, region_type, thresholds)
 
     -- Final score.
     local final_score = inner_ring_score + middle_ring_score + outer_ring_score + coast_score
+        + CoastalLuxPreferenceBonus(plot, plot_index)
 
     -- Distance bias penalty from already-placed spawns.
     local distance_bias = Lekmap_Impact.GetValue(IMPACT_LAYER.PLAYER_SPAWN, x, y)
@@ -997,6 +1026,8 @@ local function RecordStartConditions(region_index, x, y)
     local plot_index = Lekmap_Utilities.PlotIndex(x, y)
 
     local along_ocean   = plot_data_is_coastal[plot_index] == true
+    --- Coastal land touching fresh water but not ocean (for inland-sea luxury rules).
+    local along_inland_sea_coast = plot:IsCoastalLand() and plot:IsFreshWater() and not along_ocean
     local next_to_lake  = plot:IsFreshWater() and not plot:IsRiverSide()
     local is_river      = plot:IsRiverSide()
     local near_river    = false
@@ -1020,8 +1051,9 @@ local function RecordStartConditions(region_index, x, y)
     end
 
     start_conditions[region_index] = {
-        along_ocean   = along_ocean,
-        next_to_lake  = next_to_lake,
+        along_ocean             = along_ocean,
+        along_inland_sea_coast  = along_inland_sea_coast,
+        next_to_lake            = next_to_lake,
         is_river      = is_river,
         near_river    = near_river,
         near_mountain = near_mountain,
@@ -1039,7 +1071,8 @@ end
 --      BalancedCoastal   : (bool) Option 16 - add extra random coastals
 --      MixedBias         : (bool) weak coastal civs can lose bias
 --      AllowInlandSea    : (bool/number) Option 18
---      CoastLux          : (bool) Option 17 - guarantee coastal luxury
+--      CoastLuxMode      : (number) Option 17 — 1 ocean guarantee, 2 random, 3 +inland sea, 4 inland only, 5 blocked
+--      CoastLux          : (bool, legacy) maps to CoastLuxMode 1 / 2 if CoastLuxMode omitted
 --      startDistance     : (number) 1=close, 2=normal, 3=far
 --      centerBias        : (number) % center bias (default 20)
 --      middleBias        : (number) % middle bias (default 50)
@@ -1060,7 +1093,13 @@ function Lekmap_Spawns.ChooseLocations(args)
     settings.center_bias      = args.centerBias    or DEFAULT_CENTER_BIAS
     settings.middle_bias      = args.middleBias    or DEFAULT_MIDDLE_BIAS
     settings.start_distance   = args.startDistance  or 2
-    settings.coast_lux        = (args.CoastLux         ~= nil) and args.CoastLux         or false
+    if args.CoastLuxMode ~= nil then
+        settings.coast_lux_mode = args.CoastLuxMode
+    elseif args.CoastLux ~= nil then
+        settings.coast_lux_mode = args.CoastLux and 1 or 2
+    else
+        settings.coast_lux_mode = 2
+    end
     settings.collide_coastals = (args.collideCoastals  ~= nil) and args.collideCoastals  or true
     settings.allow_inland_sea = (args.AllowInlandSea   ~= nil) and args.AllowInlandSea   or false
 
@@ -1103,6 +1142,10 @@ function Lekmap_Spawns.ChooseLocations(args)
     print("Lekmap_Spawns: Finding start plots.")
     start_plots = {}
     start_conditions = {}
+    region_to_player = {}
+    for pn, ri in pairs(assignments) do
+        region_to_player[ri] = pn
+    end
 
     for _, region_index in ipairs(region_order) do
         -- Find which player is assigned to this region.
@@ -1157,6 +1200,11 @@ function Lekmap_Spawns.GetStartPlot(region_index)
     return start_plots[region_index]
 end
 
+--- Major civ assigned to this map region (1..N), or nil if none / not yet chosen.
+function Lekmap_Spawns.GetPlayerForRegion(region_index)
+    return region_to_player[region_index]
+end
+
 --- Get the start conditions for a region.
 function Lekmap_Spawns.GetStartConditions(region_index)
     return start_conditions[region_index]
@@ -1167,12 +1215,23 @@ function Lekmap_Spawns.GetAllStartPlots()
     return start_plots
 end
 
---- Get the stored CoastLux setting.
+--- Option 17 index: 1 ocean guarantee, 2 random, 3 guarantee+inland sea, 4 inland sea only, 5 blocked.
+function Lekmap_Spawns.GetCoastLuxMode()
+    return settings.coast_lux_mode or 2
+end
+
+--- Legacy: true when mode tries to place coastal lux (not Random / Blocked).
 function Lekmap_Spawns.GetCoastLuxSetting()
-    return settings.coast_lux
+    local m = settings.coast_lux_mode or 2
+    return (m == 1 or m == 3 or m == 4)
 end
 
 --- Get stored settings table.
 function Lekmap_Spawns.GetSettings()
     return settings
+end
+
+--- True when map script passed AllowInlandSea (Option 18): inland sea coast can count as coastal for starts.
+function Lekmap_Spawns.GetAllowInlandSea()
+    return settings.allow_inland_sea == true
 end

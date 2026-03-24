@@ -719,7 +719,7 @@ local REGION_TYPE_NAMES = {
     [9] = "Wetlands",  -- REGION_TYPE.WETLANDS
 }
 
-local function GetRegionTypeName(region_type)
+function Lekmap_Regions.GetRegionTypeName(region_type)
     return REGION_TYPE_NAMES[region_type] or "Undefined"
 end
 
@@ -768,7 +768,7 @@ function Lekmap_Regions.Generate(args)
 
         local region_type = Lekmap_Regions.ClassifyRegionType(terrain_counts)
         table.insert(Lekmap_Regions.regionTypes, region_type)
-        print(string.format("  Region #%d classified as: %s", i, GetRegionTypeName(region_type)))
+        print(string.format("  Region #%d classified as: %s", i, Lekmap_Regions.GetRegionTypeName(region_type)))
     end
 
     print(string.format("Lekmap_Regions: %d regions generated.", #Lekmap_Regions.regions))

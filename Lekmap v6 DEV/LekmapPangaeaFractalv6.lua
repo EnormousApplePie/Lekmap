@@ -377,8 +377,11 @@ function GetMapScriptInfo()
 			{
 				Name = "[Spawns] Coastal Luxuries",
 				Values = {
-					"Guaranteed",
+					"Guaranteed (ocean coast)",
 					"Random",
+					"Guaranteed + Inland Sea",
+					"Only Inland Sea",
+					"Blocked",
 				},
 				DefaultValue = 1,
 				SortPriority = -77,
@@ -429,6 +432,71 @@ function GetMapScriptInfo()
 				},
 				DefaultValue = 3,
 				SortPriority = -59,
+			},
+
+			----------------------------------------------------------------
+			-- OPTION 21: [Resources] Starting Luxuries (regional near capital)
+			----------------------------------------------------------------
+			{
+				Name = "[Resources] Starting Luxuries",
+				Values = {
+					"0",
+					"1",
+					"2",
+					"3",
+					"4",
+					"5",
+					"6",
+					"7",
+					"8",
+				},
+				DefaultValue = 4, -- "3"
+				SortPriority = -74,
+			},
+
+			----------------------------------------------------------------
+			-- OPTION 22: [Resources] Additional Start Luxuries
+			----------------------------------------------------------------
+			{
+				Name = "[Resources] Additional Start Luxuries",
+				Values = {
+					"0",
+					"1",
+					"2",
+					"3",
+					"4",
+					"5",
+				},
+				DefaultValue = 2, -- "1"
+				SortPriority = -73,
+			},
+
+			----------------------------------------------------------------
+			-- OPTION 23: [Resources] Guaranteed Strategics
+			----------------------------------------------------------------
+			{
+				Name = "[Resources] Guaranteed Strategics",
+				Values = {
+					"Yes",
+					"No",
+				},
+				DefaultValue = 1,
+				SortPriority = -72,
+			},
+
+			----------------------------------------------------------------
+			-- OPTION 24: [Spawns] Additional Coastal Luxuries
+			----------------------------------------------------------------
+			{
+				Name = "[Spawns] Additional Coastal Luxuries",
+				Values = {
+					"Allowed",
+					"Not Allowed",
+					"Ocean Only",
+					"Inland Sea Only",
+				},
+				DefaultValue = 1,
+				SortPriority = -71,
 			},
 		},
 	}
@@ -1922,10 +1990,20 @@ function StartPlotSystem()
 	-- Read player settings from Custom Options.
 	------------------------------------------------------------------------------
 	local resourceSetting = Map.GetCustomOption(13);
+	local balancedRegionalsOpt = Map.GetCustomOption(14); -- Yes = allow extended + balanced regional luxuries
+	local balanced_regionals   = (balancedRegionalsOpt == 1);
 	local startQuality    = Map.GetCustomOption(5);
 	local allowInlandSea  = Map.GetCustomOption(18);
 	local coastalSetting  = Map.GetCustomOption(16);
-	local coastLuxSetting = Map.GetCustomOption(17);
+	local coastLuxMode          = Map.GetCustomOption(17);  -- 1–5 coastal luxury policy
+	local additionalCoastLuxOpt = Map.GetCustomOption(24);  -- 1–4 additional coastal lux scatter
+	-- Luxury / strategics tuning (see Lekmap_Resources.PlaceAll / Lekmap_Luxuries).
+	local startingLuxuriesOpt       = Map.GetCustomOption(21);
+	local additionalStartLuxuriesOpt = Map.GetCustomOption(22);
+	local guaranteedStrategicsOpt    = Map.GetCustomOption(23);
+	local starting_luxuries          = startingLuxuriesOpt - 1;       -- 0..8
+	local additional_start_luxuries  = additionalStartLuxuriesOpt - 1; -- 0..5
+	local guaranteed_strategics      = (guaranteedStrategicsOpt == 1);
 
 	-- Coastal spawn mode.
 	local noCoastInland    = false;
@@ -1938,8 +2016,6 @@ function StartPlotSystem()
 		balancedCoastal = true;
 	end
 	-- coastalSetting == 2 is "Random" (all false = soft preference)
-
-	local coastLux = (coastLuxSetting == 1);
 
 	------------------------------------------------------------------------------
 	-- 1. Initialize impact layers (must happen before anything that checks impacts).
@@ -1970,7 +2046,7 @@ function StartPlotSystem()
 		NoCoastInland    = noCoastInland,
 		BalancedCoastal  = balancedCoastal,
 		MixedBias        = mixedBias,
-		CoastLux         = coastLux,
+		CoastLuxMode     = coastLuxMode,
 		startDistance     = startDistance,
 		AllowInlandSea   = (allowInlandSea == 1),
 		collideCoastals  = true,
@@ -1990,7 +2066,7 @@ function StartPlotSystem()
 	--    No resources placed yet -- just decides which luxury goes where.
 	------------------------------------------------------------------------------
 	print("Lekmap: Assigning luxury roles.");
-	Lekmap_Luxuries.AssignAll();
+	Lekmap_Luxuries.AssignAll({ balancedRegionals = balanced_regionals });
 
 	------------------------------------------------------------------------------
 	-- 6. Place City States.
@@ -2025,10 +2101,14 @@ function StartPlotSystem()
 	------------------------------------------------------------------------------
 	print("Lekmap: Placing resources.");
 	Lekmap_Resources.PlaceAll({
-		resourceSetting  = resourceSetting,
-		startQuality     = startQuality,
-		coastLux         = coastLux,
-		strategicBalance = true,
+		resourceSetting             = resourceSetting,
+		startQuality                = startQuality,
+		coastLuxMode                = coastLuxMode,
+		additionalCoastalLuxuries   = additionalCoastLuxOpt,
+		strategicBalance            = true,
+		startingLuxuries            = starting_luxuries,
+		additionalStartLuxuries     = additional_start_luxuries,
+		guaranteedStrategics        = guaranteed_strategics,
 	});
 
 	print("Lekmap: StartPlotSystem complete.");

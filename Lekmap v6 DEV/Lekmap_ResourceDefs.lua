@@ -97,10 +97,10 @@ Lekmap_ResourceDefs.RESOURCE_DEFS = {
     },
     ALUMINUM = {
         class            = "strategic",
-        terrains         = { "TERRAIN_PLAINS", "TERRAIN_DESERT", "TERRAIN_TUNDRA", "TERRAIN_GRASS", "TERRAIN_HILL" },
+        terrains         = { "TERRAIN_PLAINS", "TERRAIN_DESERT", "TERRAIN_TUNDRA", "TERRAIN_GRASS" },
         features         = { "FEATURE_FOREST", "FEATURE_JUNGLE" },
         hills            = true,
-        flatlands        = false,
+        flatlands        = true,
     },
     URANIUM = {
         class            = "strategic",
@@ -124,7 +124,7 @@ Lekmap_ResourceDefs.RESOURCE_DEFS = {
     },
     COW = {
         class            = "bonus",
-        terrains         = { "TERRAIN_GRASS" },
+        terrains         = { "TERRAIN_GRASS", "TERRAIN_PLAINS"},
         features         = {},
         hills            = false,
         flatlands        = true,
@@ -140,7 +140,8 @@ Lekmap_ResourceDefs.RESOURCE_DEFS = {
         class            = "bonus",
         terrains         = { "TERRAIN_TUNDRA" },
         features         = { "FEATURE_FOREST" },
-        feature_terrains = { "TERRAIN_GRASS", "TERRAIN_PLAINS", "TERRAIN_TUNDRA", "TERRAIN_SNOW" },
+        feature_terrains = { "TERRAIN_GRASS", "TERRAIN_PLAINS", "TERRAIN_TUNDRA"},
+        force_valid_feature = { "FEATURE_FOREST" },
         hills            = true,
         flatlands        = true,
     },
@@ -149,9 +150,10 @@ Lekmap_ResourceDefs.RESOURCE_DEFS = {
         terrains         = {},
         features         = { "FEATURE_JUNGLE" },
         feature_terrains = { "TERRAIN_GRASS", "TERRAIN_PLAINS" },
-        hills            = false,
+        hills            = true,
         flatlands        = true,
     },
+    -- Shallow coast, no terrain feature (empty features table — same rule as land).
     FISH = {
         class            = "bonus",
         terrains         = { "TERRAIN_COAST" },
@@ -161,10 +163,10 @@ Lekmap_ResourceDefs.RESOURCE_DEFS = {
     },
     STONE = {
         class            = "bonus",
-        terrains         = { "TERRAIN_GRASS", "TERRAIN_PLAINS", "TERRAIN_DESERT", "TERRAIN_TUNDRA", "TERRAIN_SNOW" },
+        terrains         = { "TERRAIN_GRASS", "TERRAIN_DESERT", "TERRAIN_TUNDRA" },
         features         = {},
-        hills            = true,
-        flatlands        = false,
+        hills            = false,
+        flatlands        = true,
     },
     BISON = {
         class            = "bonus",
@@ -181,7 +183,7 @@ Lekmap_ResourceDefs.RESOURCE_DEFS = {
         terrains         = {},
         features         = { "FEATURE_JUNGLE", "FEATURE_FOREST" },
         feature_terrains = { "TERRAIN_PLAINS", "TERRAIN_GRASS", "TERRAIN_TUNDRA" },
-        hills            = false,
+        hills            = true,
         flatlands        = true,
     },
     MAIZE = {
@@ -432,7 +434,7 @@ Lekmap_ResourceDefs.RESOURCE_DEFS = {
         class            = "luxury",
         terrains         = { "TERRAIN_PLAINS", "TERRAIN_TUNDRA" },
         features         = {},
-        hills            = false,
+        hills            = true,
         flatlands        = true,
     },
     COCONUT = {
@@ -440,7 +442,8 @@ Lekmap_ResourceDefs.RESOURCE_DEFS = {
         terrains         = {},
         features         = { "FEATURE_JUNGLE", "FEATURE_FOREST" },
         feature_terrains = { "TERRAIN_PLAINS", "TERRAIN_GRASS" },
-        hills            = false,
+        force_valid_feature = { "FEATURE_JUNGLE", "FEATURE_FOREST" },
+        hills            = true,
         flatlands        = true,
     },
     RUBBER = {
@@ -448,7 +451,8 @@ Lekmap_ResourceDefs.RESOURCE_DEFS = {
         terrains         = {},
         features         = { "FEATURE_JUNGLE", "FEATURE_FOREST" },
         feature_terrains = { "TERRAIN_PLAINS", "TERRAIN_GRASS" },
-        hills            = false,
+        force_valid_feature = { "FEATURE_JUNGLE", "FEATURE_FOREST" },
+        hills            = true,
         flatlands        = true,
     },
 }
@@ -718,107 +722,18 @@ Lekmap_ResourceDefs.BONUS_PLACEMENT_RULES = {
 }
 
 ------------------------------------------------------------------------------
--- LUXURY REGION WEIGHTS
--- Unified table -- includes all resources from vanilla, expansions, and
--- lekmod. Resources not present in the game are filtered by
--- ResolveWeightTable() at runtime.
---
--- NOTE: Numeric key literals are used instead of Lekmap_Constants.REGION_TYPE
--- because this table is defined at module load time, before Lekmap_Constants
--- is guaranteed to be initialized.
+-- LUXURY REGION WEIGHTS (per terrain) — moved to Lekmap_Luxuries.lua:
+--   Lekmap_Luxuries.REGIONAL_LUXURY_WEIGHTS_BY_TERRAIN  (bonus-style key → weight)
+--   Lekmap_Luxuries.EXTENDED_REGIONAL_LUXURY_KEYS / BALANCED_REGIONAL_LUXURY_KEYS
+--   (Balanced Regionals map option; see Lekmap_Luxuries.AssignAll).
 ------------------------------------------------------------------------------
-Lekmap_ResourceDefs.LUXURY_REGION_WEIGHTS = {
-    [1] = { -- REGION_TYPE.TUNDRA
-        { "FUR", 40 }, { "MARBLE", 10 }, { "SILVER", 40 }, { "AMBER", 40 },
-        { "SALT", 40 }, { "GOLD", 10 }, { "COPPER", 10 }, { "GEMS", 10 },
-        { "JADE", 10 }, { "LAPIS", 10 }, { "WHALE", 10 }, { "CRAB", 10 },
-        { "PEARLS", 10 }, { "OBSIDIAN", 10 }, { "CORAL", 10 },
-    },
-    [2] = { -- REGION_TYPE.JUNGLE
-        { "CITRUS", 40 }, { "COCOA", 40 }, { "SPICES", 40 }, { "SUGAR", 40 },
-        { "OBSIDIAN", 40 }, { "COCONUT", 40 }, { "RUBBER", 40 }, { "TRUFFLES", 40 },
-        { "SILK", 10 }, { "DYE", 10 }, { "FUR", 10 }, { "WHALE", 10 },
-        { "CRAB", 10 }, { "PEARLS", 10 }, { "CORAL", 10 },
-    },
-    [3] = { -- REGION_TYPE.FOREST
-        { "TRUFFLES", 40 }, { "MARBLE", 5 }, { "SILK", 10 }, { "DYE", 10 },
-        { "FUR", 40 }, { "COCONUT", 10 }, { "RUBBER", 10 }, { "CITRUS", 10 },
-        { "COCOA", 10 }, { "SPICES", 10 }, { "SUGAR", 10 }, { "WHALE", 10 },
-        { "CRAB", 10 }, { "PEARLS", 10 }, { "CORAL", 10 },
-    },
-    [4] = { -- REGION_TYPE.DESERT
-        { "INCENSE", 40 }, { "MARBLE", 5 }, { "SALT", 40 }, { "GOLD", 40 },
-        { "LAPIS", 40 }, { "OBSIDIAN", 10 }, { "COPPER", 10 }, { "SILVER", 10 },
-        { "AMBER", 10 }, { "GEMS", 10 }, { "JADE", 10 }, { "WHALE", 10 },
-        { "CRAB", 10 }, { "PEARLS", 10 }, { "CORAL", 10 },
-    },
-    [5] = { -- REGION_TYPE.HILLS
-        { "GOLD", 30 }, { "MARBLE", 15 }, { "SILVER", 30 }, { "COPPER", 30 },
-        { "GEMS", 30 }, { "SALT", 30 }, { "JADE", 30 }, { "AMBER", 30 },
-        { "LAPIS", 30 }, { "OBSIDIAN", 30 }, { "WHALE", 10 }, { "CRAB", 10 },
-        { "PEARLS", 10 }, { "CORAL", 10 },
-    },
-    [6] = { -- REGION_TYPE.PLAINS
-        { "INCENSE", 40 }, { "MARBLE", 10 }, { "IVORY", 40 }, { "WINE", 40 },
-        { "OLIVE", 40 }, { "COFFEE", 40 }, { "TOBACCO", 10 }, { "TEA", 10 },
-        { "PERFUME", 40 }, { "COTTON", 10 }, { "WHALE", 10 }, { "CRAB", 10 },
-        { "PEARLS", 10 }, { "CORAL", 10 },
-    },
-    [7] = { -- REGION_TYPE.GRASS
-        { "TOBACCO", 40 }, { "MARBLE", 10 }, { "TEA", 40 }, { "COTTON", 40 },
-        { "PERFUME", 25 }, { "IVORY", 10 }, { "WINE", 10 }, { "OLIVE", 25 },
-        { "COFFEE", 25 }, { "WHALE", 10 }, { "CRAB", 10 }, { "PEARLS", 10 },
-        { "CORAL", 10 },
-    },
-    [8] = { -- REGION_TYPE.HYBRID
-        { "GOLD", 30 }, { "MARBLE", 15 }, { "SILVER", 30 }, { "COPPER", 30 },
-        { "GEMS", 30 }, { "SALT", 30 }, { "JADE", 30 }, { "AMBER", 30 },
-        { "LAPIS", 30 }, { "OBSIDIAN", 30 }, { "COFFEE", 5 }, { "COCONUT", 5 },
-        { "RUBBER", 5 }, { "TOBACCO", 5 }, { "TEA", 5 }, { "PERFUME", 5 },
-        { "COTTON", 5 }, { "IVORY", 5 }, { "WINE", 5 }, { "OLIVE", 5 },
-        { "INCENSE", 5 }, { "TRUFFLES", 5 }, { "SILK", 5 }, { "DYE", 5 },
-        { "FUR", 5 }, { "CITRUS", 5 }, { "COCOA", 5 }, { "SPICES", 5 },
-        { "SUGAR", 5 }, { "WHALE", 20 }, { "CRAB", 20 }, { "PEARLS", 20 },
-        { "CORAL", 20 },
-    },
-    [9] = { -- REGION_TYPE.WETLANDS
-        { "TOBACCO", 40 }, { "TEA", 40 }, { "PERFUME", 20 }, { "COTTON", 30 },
-        { "OLIVE", 20 }, { "SILVER", 20 }, { "SUGAR", 20 }, { "COPPER", 20 },
-        { "CORAL", 20 }, { "CRAB", 25 }, { "PEARLS", 25 }, { "COCONUT", 30 },
-        { "RUBBER", 5 }, { "WHALE", 25 }, { "COCOA", 10 }, { "TRUFFLES", 5 },
-        { "SPICES", 5 }, { "GEMS", 20 },
-    },
-}
 
 ------------------------------------------------------------------------------
--- LUXURY FALLBACK WEIGHTS
+-- LUXURY RANDOM / CS WEIGHTS — removed: use Lekmap_Luxuries.lua
+--   REGIONAL_LUXURY_WEIGHTS_BY_TERRAIN (merged for random pool & fallbacks)
+--   City-state type pool: same terrain weights, random host region per pick
+--   (see Lekmap_Luxuries.AssignRoles).
 ------------------------------------------------------------------------------
-Lekmap_ResourceDefs.LUXURY_FALLBACK_WEIGHTS = {
-    { "GOLD", 10 }, { "SILVER", 10 }, { "COPPER", 10 }, { "GEMS", 10 },
-    { "MARBLE", 5 }, { "SALT", 10 }, { "JADE", 10 }, { "AMBER", 10 },
-    { "LAPIS", 10 }, { "OBSIDIAN", 10 }, { "COFFEE", 5 }, { "TOBACCO", 5 },
-    { "TEA", 5 }, { "PERFUME", 5 }, { "COTTON", 5 }, { "IVORY", 5 },
-    { "WINE", 5 }, { "OLIVE", 5 }, { "INCENSE", 5 }, { "TRUFFLES", 5 },
-    { "SILK", 5 }, { "DYE", 5 }, { "FUR", 5 }, { "CITRUS", 5 },
-    { "COCOA", 5 }, { "SPICES", 5 }, { "SUGAR", 5 }, { "WHALE", 30 },
-    { "CRAB", 30 }, { "PEARLS", 30 }, { "COCONUT", 5 }, { "RUBBER", 5 },
-    { "CORAL", 30 },
-}
-
-------------------------------------------------------------------------------
--- LUXURY CITY STATE WEIGHTS
-------------------------------------------------------------------------------
-Lekmap_ResourceDefs.LUXURY_CITY_STATE_WEIGHTS = {
-    { "GOLD", 5 }, { "OBSIDIAN", 5 }, { "MARBLE", 5 }, { "SILVER", 5 },
-    { "COPPER", 5 }, { "GEMS", 5 }, { "SALT", 5 }, { "JADE", 5 },
-    { "AMBER", 5 }, { "LAPIS", 5 }, { "COFFEE", 5 }, { "TOBACCO", 5 },
-    { "TEA", 5 }, { "PERFUME", 5 }, { "COTTON", 5 }, { "IVORY", 5 },
-    { "WINE", 5 }, { "OLIVE", 5 }, { "INCENSE", 5 }, { "TRUFFLES", 5 },
-    { "SILK", 5 }, { "DYE", 5 }, { "FUR", 5 }, { "CITRUS", 5 },
-    { "COCOA", 5 }, { "SPICES", 5 }, { "SUGAR", 5 }, { "COCONUT", 5 },
-    { "RUBBER", 5 }, { "WHALE", 30 }, { "CRAB", 30 }, { "PEARLS", 30 },
-    { "CORAL", 30 },
-}
 
 ------------------------------------------------------------------------------
 -- RESOURCE PREFERENCES

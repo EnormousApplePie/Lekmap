@@ -19,7 +19,7 @@ include("Lekmap_Regions");
 include("Lekmap_Resources");
 include("Lekmap_Luxuries");
 include("Lekmap_Strategics");
-include("Lekmap_Bonus");
+include("Lekmap_Bonus");  -- regional start bonuses (majors + city-states)
 include("Lekmap_Spawns");
 include("Lekmap_NaturalWonders");
 include("Lekmap_CityStates");
