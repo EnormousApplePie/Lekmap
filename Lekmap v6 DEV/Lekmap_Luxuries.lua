@@ -118,42 +118,42 @@ local function _LuxuryWeightMapFromPairs(pairs_list)
     return m
 end
 
---- Terrain regional rolls exclude WHALE/CRAB/PEARLS — those use Option 17 + coastal placement only.
+--- Terrain regional rolls exclude Coastal Luxuries — those use Option 17 + coastal placement only.
 Lekmap_Luxuries.REGIONAL_LUXURY_WEIGHTS_BY_TERRAIN = {
     [1] = _LuxuryWeightMapFromPairs({ -- TUNDRA
         { "FUR", 40 }, { "MARBLE", 10 }, { "SILVER", 40 }, { "AMBER", 40 },
         { "SALT", 40 }, { "GOLD", 10 }, { "COPPER", 10 }, { "GEMS", 10 },
-        { "JADE", 10 }, { "LAPIS", 10 }, { "OBSIDIAN", 10 }, { "CORAL", 10 },
+        { "JADE", 10 }, { "LAPIS", 10 }, { "OBSIDIAN", 10 },
     }),
     [2] = _LuxuryWeightMapFromPairs({ -- JUNGLE
         { "CITRUS", 40 }, { "COCOA", 40 }, { "SPICES", 40 }, { "SUGAR", 40 },
         { "OBSIDIAN", 40 }, { "COCONUT", 40 }, { "RUBBER", 40 }, { "TRUFFLES", 40 },
-        { "SILK", 10 }, { "DYE", 10 }, { "FUR", 10 }, { "CORAL", 10 },
+        { "SILK", 10 }, { "DYE", 10 }, { "FUR", 10 },
     }),
     [3] = _LuxuryWeightMapFromPairs({ -- FOREST
         { "TRUFFLES", 40 }, { "MARBLE", 5 }, { "SILK", 30 }, { "DYE", 30 },
         { "FUR", 40 }, { "COCONUT", 30 }, { "RUBBER", 10 }, { "CITRUS", 40 },
-        { "COCOA", 30 }, { "SPICES", 30 }, { "SUGAR", 10 }, { "CORAL", 10 },
+        { "COCOA", 30 }, { "SPICES", 30 }, { "SUGAR", 10 },
     }),
     [4] = _LuxuryWeightMapFromPairs({ -- DESERT
         { "INCENSE", 40 }, { "MARBLE", 5 }, { "SALT", 40 }, { "GOLD", 40 },
         { "LAPIS", 40 }, { "OBSIDIAN", 10 }, { "COPPER", 10 }, { "SILVER", 10 },
-        { "AMBER", 10 }, { "GEMS", 10 }, { "JADE", 10 }, { "CORAL", 10 },
+        { "AMBER", 10 }, { "GEMS", 10 }, { "JADE", 10 },
     }),
     [5] = _LuxuryWeightMapFromPairs({ -- HILLS
         { "GOLD", 30 }, { "MARBLE", 15 }, { "SILVER", 30 }, { "COPPER", 30 },
         { "GEMS", 30 }, { "SALT", 30 }, { "JADE", 30 }, { "AMBER", 30 },
-        { "LAPIS", 30 }, { "OBSIDIAN", 30 }, { "CORAL", 10 },
+        { "LAPIS", 30 }, { "OBSIDIAN", 30 },
     }),
     [6] = _LuxuryWeightMapFromPairs({ -- PLAINS
         { "INCENSE", 40 }, { "MARBLE", 10 }, { "IVORY", 40 }, { "WINE", 40 },
         { "OLIVE", 40 }, { "COFFEE", 40 }, { "TOBACCO", 10 }, { "TEA", 10 },
-        { "PERFUME", 40 }, { "COTTON", 10 }, { "CORAL", 10 },
+        { "PERFUME", 40 }, { "COTTON", 10 },
     }),
     [7] = _LuxuryWeightMapFromPairs({ -- GRASS
         { "TOBACCO", 40 }, { "MARBLE", 10 }, { "TEA", 40 }, { "COTTON", 40 },
         { "PERFUME", 25 }, { "IVORY", 10 }, { "WINE", 10 }, { "OLIVE", 25 },
-        { "COFFEE", 25 }, { "CORAL", 10 },
+        { "COFFEE", 25 },
     }),
     [8] = _LuxuryWeightMapFromPairs({ -- HYBRID
         { "GOLD", 30 }, { "MARBLE", 15 }, { "SILVER", 30 }, { "COPPER", 30 },
@@ -163,12 +163,12 @@ Lekmap_Luxuries.REGIONAL_LUXURY_WEIGHTS_BY_TERRAIN = {
         { "COTTON", 5 }, { "IVORY", 5 }, { "WINE", 5 }, { "OLIVE", 5 },
         { "INCENSE", 5 }, { "TRUFFLES", 5 }, { "SILK", 5 }, { "DYE", 5 },
         { "FUR", 5 }, { "CITRUS", 5 }, { "COCOA", 5 }, { "SPICES", 5 },
-        { "SUGAR", 5 }, { "CORAL", 20 },
+        { "SUGAR", 5 },
     }),
     [9] = _LuxuryWeightMapFromPairs({ -- WETLANDS
         { "TOBACCO", 40 }, { "TEA", 40 }, { "PERFUME", 20 }, { "COTTON", 30 },
-        { "OLIVE", 20 }, { "SILVER", 20 }, { "SUGAR", 20 }, { "COPPER", 20 },
-        { "CORAL", 20 }, { "COCONUT", 30 },
+        { "OLIVE", 20 }, { "SILVER", 20 }, { "SUGAR", 20 }, { "COPPER", 20 }, 
+        { "COCONUT", 30 },
         { "RUBBER", 5 }, { "COCOA", 10 }, { "TRUFFLES", 5 },
         { "SPICES", 5 }, { "GEMS", 20 },
     }),
