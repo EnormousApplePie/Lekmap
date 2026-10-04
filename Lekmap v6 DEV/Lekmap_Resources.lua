@@ -35,6 +35,7 @@ local map_width, map_height = 0, 0
 --- Each entry: { plot_type, terrain_type, feature_type, is_hill, is_flat, is_water, is_coast,
 ---               adjacent_to_land, is_lake, has_resource, is_mountain, x, y }
 local plot_cache = {}
+local reachability_cache = {}
 
 --- Collision data: plots occupied by player starts, CS starts, or natural wonders.
 local collision_data = {}
@@ -105,6 +106,7 @@ function Lekmap_Resources.BuildWorldPlotCache()
                 is_lake         = plot:IsLake(),
                 adjacent_to_land = plot:IsAdjacentToLand(),
                 has_resource    = (plot:GetResourceType(-1) ~= -1),
+                is_wonder       = Lekmap_Utilities.IsNaturalWonder(plot),
             }
 
             if plot_type == PlotTypes.PLOT_MOUNTAIN then
@@ -134,77 +136,8 @@ end
 --  @return true if the resource can legally be placed on this plot
 ------------------------------------------------------------------------------
 function Lekmap_Resources.IsValidPlotForResource(entry, def)
-    -- Must not already have a resource.
-    if entry.has_resource then return false end
-
-    -- Must not be a collision plot (start, CS, NW).
-    if collision_data[entry.y * map_width + entry.x + 1] then return false end
-
-    -- Must not be mountain.
-    if entry.is_mountain then return false end
-
-    -- Shallow coast water (before hill/flat). Same idea as land + empty def.features: only
-    -- NO_FEATURE tiles qualify — atolls, ice, etc. are features and are not listed on FISH etc.
-    if entry.is_water then
-        if entry.is_lake then return false end
-        if not entry.is_coast then return false end
-        if entry.feature_type ~= FeatureTypes.NO_FEATURE then return false end
-        for _, t in ipairs(def.terrains) do
-            if TERRAIN_LOOKUP[t] == TerrainTypes.TERRAIN_COAST then
-                return true
-            end
-        end
-        return false
-    end
-
-    -- Land: hills/flatlands eligibility.
-    if entry.is_hill and not def.hills then return false end
-    if entry.is_flat and not def.flatlands then return false end
-
-    -- Land plot with a feature.
-    if entry.feature_type ~= FeatureTypes.NO_FEATURE then
-        -- Check if feature is in the allowed features list.
-        local feature_allowed = false
-        for _, f in ipairs(def.features) do
-            if FEATURE_LOOKUP[f] == entry.feature_type then
-                feature_allowed = true
-                break
-            end
-        end
-        if not feature_allowed then return false end
-
-        -- If feature_terrains is specified, the terrain under the feature must match.
-        if def.feature_terrains then
-            local terrain_under_ok = false
-            for _, t in ipairs(def.feature_terrains) do
-                if TERRAIN_LOOKUP[t] == entry.terrain_type then
-                    terrain_under_ok = true
-                    break
-                end
-            end
-            if not terrain_under_ok then return false end
-        end
-        return true
-    end
-
-    -- Land plot with no feature: terrain must be in the terrains list.
-    for _, t in ipairs(def.terrains) do
-        if TERRAIN_LOOKUP[t] == entry.terrain_type then
-            return true
-        end
-    end
-
-    -- force_valid_feature: accept bare terrain if it matches feature_terrains
-    -- and the resource has a feature that can be forced after placement.
-    if def.force_valid_feature and def.feature_terrains then
-        for _, t in ipairs(def.feature_terrains) do
-            if TERRAIN_LOOKUP[t] == entry.terrain_type then
-                return true
-            end
-        end
-    end
-
-    return false
+    if not entry or collision_data[entry.y * map_width + entry.x + 1] then return false end
+    return Lekmap_ResourceDefs.MatchesPlot(entry, def, true)
 end
 
 ------------------------------------------------------------------------------
@@ -225,6 +158,10 @@ function Lekmap_Resources.RefreshPlotCacheAt(x, y)
     local plot = Map.GetPlot(x, y)
     if not plot then return end
     local i = y * map_width + x + 1
+    local previous = plot_cache[i]
+    if not previous or previous.plot_type ~= plot:GetPlotType() or previous.feature_type ~= plot:GetFeatureType() then
+        reachability_cache = {}
+    end
     local plot_type    = plot:GetPlotType()
     local terrain_type = plot:GetTerrainType()
     local feature_type = plot:GetFeatureType()
@@ -243,6 +180,7 @@ function Lekmap_Resources.RefreshPlotCacheAt(x, y)
         is_lake         = plot:IsLake(),
         adjacent_to_land = plot:IsAdjacentToLand(),
         has_resource    = (plot:GetResourceType(-1) ~= -1),
+                is_wonder       = Lekmap_Utilities.IsNaturalWonder(plot),
     }
 end
 
@@ -277,7 +215,7 @@ end
 -- Never calls SetTerrainType (biome grass/plains/desert/tundra/snow unchanged).
 -- @return true if the map was modified
 local function TryRelaxPlotForStartBonus(plot, def)
-    if not plot or plot:GetPlotType() == PlotTypes.PLOT_OCEAN then
+    if not plot or plot:IsWater() or plot:IsMountain() or Lekmap_Utilities.IsNaturalWonder(plot) then
         return false
     end
     if plot:GetResourceType(-1) ~= -1 then
@@ -367,12 +305,18 @@ function Lekmap_Resources.TryPlaceStartBonusAtPlot(resource_key, x, y, region_in
         return true
     end
 
+    local original_type, original_feature = plot:GetPlotType(), plot:GetFeatureType()
     if TryRelaxPlotForStartBonus(plot, def) then
         Lekmap_Resources.RefreshPlotCacheAt(x, y)
         entry = plot_cache[idx]
         if attempt_place() then
             return true
         end
+        -- A failed attempt must not clear a forest or flatten a hill for the
+        -- next candidate. Commit normalization only together with a resource.
+        plot:SetPlotType(original_type, false, true)
+        plot:SetFeatureType(original_feature, -1)
+        Lekmap_Resources.RefreshPlotCacheAt(x, y)
     end
 
     return false
@@ -390,6 +334,14 @@ end
 --  @param region_index     optional region number (for fallback region-type heuristic)
 --  @return feature_id      engine feature ID to set, or nil
 local function ChooseForceFeature(x, y, candidates, region_index)
+    local plot = Map.GetPlot(x, y)
+    if not plot then return nil end
+    local allowed = {}
+    for _, name in ipairs(candidates) do
+        local id = FEATURE_LOOKUP[name]
+        if id and plot:CanHaveFeature(id) then allowed[#allowed + 1] = name end
+    end
+    candidates = allowed
     if #candidates == 0 then return nil end
     if #candidates == 1 then return FEATURE_LOOKUP[candidates[1]] end
 
@@ -425,7 +377,7 @@ local function ChooseForceFeature(x, y, candidates, region_index)
     if best_count == 0 and region_index then
         local REGION_TYPE = Lekmap_Constants.REGION_TYPE
         local region = Lekmap_Regions.GetRegion(region_index)
-        local rtype = region and region.regionType
+        local rtype = Lekmap_Regions.GetRegionType(region_index)
         if rtype then
             -- Jungle-like regions prefer jungle; otherwise prefer forest.
             local prefer_jungle = (rtype == REGION_TYPE.JUNGLE or rtype == REGION_TYPE.WETLANDS)
@@ -484,6 +436,37 @@ end
 --  @param scope         "world" for entire map, or { x, y, radius } for near-plot
 --  @return              shuffled array of 1-based plot indices
 ------------------------------------------------------------------------------
+-- Supply belongs to the nearest major start and must have a passable approach.
+-- Keep region resources and world scatter unconstrained by this opening rule.
+function Lekmap_Resources.CanSupplyStart(resource_key, x, y, origin, radius)
+    local plot = Map.GetPlot(x, y)
+    if not plot or not origin then return false end
+    radius = radius or 3
+    local allow_water = plot:IsWater()
+    local key = origin.x .. ":" .. origin.y .. ":" .. radius .. ":" .. tostring(allow_water)
+    local reachable = reachability_cache[key]
+    if not reachable then
+        reachable = Lekmap_HexUtil.ReachablePlots(origin.x, origin.y, radius, allow_water)
+        reachability_cache[key] = reachable
+    end
+    if reachable[y * map_width + x + 1] == nil then return false end
+    local starts = Lekmap_Spawns.GetAllStartPlots()
+    local own_region
+    for region, start in Lekmap_Utilities.OrderedPairs(starts) do
+        if start.x == origin.x and start.y == origin.y then own_region = region; break end
+    end
+    if own_region then
+        local own_distance = Map.PlotDistance(origin.x, origin.y, x, y)
+        for region, start in Lekmap_Utilities.OrderedPairs(starts) do
+            if region ~= own_region then
+                local distance = Map.PlotDistance(start.x, start.y, x, y)
+                if distance < own_distance or (distance == own_distance and region < own_region) then return false end
+            end
+        end
+    end
+    return true
+end
+
 function Lekmap_Resources.GeneratePlotList(resource_key, scope)
     local active_resource = Lekmap_ResourceDefs.active and Lekmap_ResourceDefs.active[resource_key]
     if not active_resource then return {} end
@@ -508,7 +491,8 @@ function Lekmap_Resources.GeneratePlotList(resource_key, scope)
                     local ry = ring_plot:GetY()
                     local idx = ry * map_width + rx + 1
                     local entry = plot_cache[idx]
-                    if entry and Lekmap_Resources.IsValidPlotForResource(entry, def) then
+                    if entry and Lekmap_Resources.IsValidPlotForResource(entry, def)
+                        and (not scope.start_area or Lekmap_Resources.CanSupplyStart(resource_key, rx, ry, scope, scope.radius)) then
                         table.insert(candidates, idx)
                     end
                 end
@@ -581,43 +565,52 @@ end
 --  @param quantity        resource quantity (0 for unquantified)
 --  @return               true if placed successfully
 ------------------------------------------------------------------------------
-function Lekmap_Resources.PlaceOne(x, y, resource_key, quantity)
-    local active_resource = Lekmap_ResourceDefs.active and Lekmap_ResourceDefs.active[resource_key]
-    if not active_resource then return false end
-
-    local plot = Map.GetPlot(x, y)
-    if plot == nil then return false end
-    if plot:GetResourceType(-1) ~= -1 then return false end
-
-    plot:SetResourceType(active_resource.id, quantity or 0)
-
-    -- Jungle/forest etc. when RESOURCE_DEFS sets force_valid_feature (matches PlaceSpecificNumber / scatter).
-    Lekmap_Resources.ForceFeatureAfterPlacement(resource_key, x, y, nil)
-
-    -- Update tracking.
-    amounts_placed[active_resource.id] = (amounts_placed[active_resource.id] or 0) + (quantity > 0 and quantity or 1)
-    if active_resource.def.class == "luxury" then
-        total_lux_placed = total_lux_placed + 1
+-- All writers share this live check. Candidate caches may predate city-state
+-- normalization or natural-wonder placement, so a cached list is not authority.
+function Lekmap_Resources.CanPlaceAt(resource_key, x, y)
+    local active = Lekmap_ResourceDefs.active and Lekmap_ResourceDefs.active[resource_key]
+    if not active or not Map.GetPlot(x, y) then return false end
+    if active.def.class == "strategic" and Lekmap_Strategics
+        and not Lekmap_Strategics.CanPlaceResource(resource_key,x,y) then return false end
+    Lekmap_Resources.RefreshPlotCacheAt(x, y)
+    local entry = plot_cache[y * map_width + x + 1]
+    if not Lekmap_Resources.IsValidPlotForResource(entry, active.def) then return false end
+    if entry.feature_type == FeatureTypes.NO_FEATURE and active.def.force_valid_feature then
+        local bare_allowed = false
+        for _, terrain in ipairs(active.def.terrains) do
+            if TERRAIN_LOOKUP[terrain] == entry.terrain_type then bare_allowed = true end
+        end
+        if not bare_allowed and not ChooseForceFeature(x, y, active.def.force_valid_feature, nil) then return false end
     end
-
-    -- Apply impact.
-    local class_info = active_resource.classInfo
-    local spacing    = class_info.default_spacing
-    local min_radius = spacing.min
-    local max_radius = spacing.max
-    local radius     = min_radius
-    if max_radius > min_radius then
-        radius = min_radius + Map.Rand(max_radius - min_radius + 1, "Resource impact radius")
-    end
-    Lekmap_Impact.PlaceImpact(class_info.impact_layer, x, y, radius)
-
-    -- Mark plot cache as having a resource.
-    local idx = y * map_width + x + 1
-    if plot_cache[idx] then
-        plot_cache[idx].has_resource = true
-    end
-
     return true
+end
+
+local function PlaceValidated(x, y, resource_key, quantity, layer, min_radius, max_radius)
+    if not Lekmap_Resources.CanPlaceAt(resource_key, x, y) then return false end
+    local active = Lekmap_ResourceDefs.active[resource_key]
+    local plot = Map.GetPlot(x, y)
+    quantity = math.max(1, math.floor(quantity or 1))
+    plot:SetResourceType(active.id, quantity)
+    Lekmap_Resources.ForceFeatureAfterPlacement(resource_key, x, y, nil)
+    amounts_placed[active.id] = (amounts_placed[active.id] or 0) + quantity
+    if active.def.class == "luxury" then total_lux_placed = total_lux_placed + 1 end
+    if layer and layer > 0 then
+        local radius = min_radius or 0
+        if max_radius and max_radius > radius then
+            radius = radius + Map.Rand(max_radius - radius + 1, "Resource impact radius")
+        end
+        Lekmap_Impact.PlaceImpact(layer, x, y, radius)
+    end
+    Lekmap_Resources.RefreshPlotCacheAt(x, y)
+    return true
+end
+
+function Lekmap_Resources.PlaceOne(x, y, resource_key, quantity)
+    local active = Lekmap_ResourceDefs.active and Lekmap_ResourceDefs.active[resource_key]
+    if not active then return false end
+    local info = active.classInfo
+    return PlaceValidated(x, y, resource_key, quantity, info.impact_layer,
+        info.default_spacing.min, info.default_spacing.max)
 end
 
 ------------------------------------------------------------------------------
@@ -633,43 +626,13 @@ end
 ------------------------------------------------------------------------------
 function Lekmap_Resources.PlaceScatterBonusAtPlotIndex(plot_index, resource_key, min_radius, max_radius, options)
     options = options or {}
-    local active = Lekmap_ResourceDefs.active and Lekmap_ResourceDefs.active[resource_key]
-    if not active then
-        return false
-    end
     local entry = plot_cache[plot_index]
-    if not entry or entry.has_resource then
+    if not entry then return false end
+    local layer = Lekmap_Constants.IMPACT_LAYER.BONUS
+    if not options.ignore_bonus_impact and Lekmap_Impact.IsImpacted(layer, entry.x, entry.y) then
         return false
     end
-    local x, y = entry.x, entry.y
-    if Lekmap_Resources.IsCollision(x, y) then
-        return false
-    end
-    local IMPACT_LAYER = Lekmap_Constants.IMPACT_LAYER
-    if not options.ignore_bonus_impact and Lekmap_Impact.IsImpacted(IMPACT_LAYER.BONUS, x, y) then
-        return false
-    end
-    local plot = Map.GetPlot(x, y)
-    if not plot or plot:GetResourceType(-1) ~= -1 then
-        return false
-    end
-
-    plot:SetResourceType(active.id, 1)
-    amounts_placed[active.id] = (amounts_placed[active.id] or 0) + 1
-    if Game.GetResourceUsageType(active.id) == ResourceUsageTypes.RESOURCEUSAGE_LUXURY then
-        total_lux_placed = total_lux_placed + 1
-    end
-
-    local radius_add = 0
-    if max_radius > min_radius then
-        radius_add = Map.Rand(max_radius - min_radius + 1, "Scatter bonus impact radius")
-    end
-    Lekmap_Impact.PlaceImpact(IMPACT_LAYER.BONUS, x, y, min_radius + radius_add)
-    Lekmap_Resources.ForceFeatureAfterPlacement(resource_key, x, y, nil)
-    if plot_cache[plot_index] then
-        plot_cache[plot_index].has_resource = true
-    end
-    return true
+    return PlaceValidated(entry.x, entry.y, resource_key, 1, layer, min_radius, max_radius)
 end
 
 ------------------------------------------------------------------------------
@@ -686,125 +649,35 @@ end
 --  @return                 number of resources placed
 ------------------------------------------------------------------------------
 function Lekmap_Resources.ProcessWeightedList(frequency, layer, plot_list, entries)
-    if plot_list == nil or #plot_list == 0 then return 0 end
-    if entries == nil or #entries == 0 then return 0 end
-
-    local num_to_place = math.ceil(#plot_list / frequency)
-    local num_placed   = 0
-
-    -- Build cumulative weight thresholds.
+    if not plot_list or #plot_list == 0 or not entries or #entries == 0 then return 0 end
+    assert(frequency and frequency > 0, "Resource frequency must be positive")
     local total_weight = 0
-    for _, e in ipairs(entries) do
-        total_weight = total_weight + e[3]
-    end
+    for _, entry in ipairs(entries) do total_weight = total_weight + math.max(0, entry[3]) end
     if total_weight <= 0 then return 0 end
-
-    local thresholds = {}
-    local accumulated = 0
-    for i, e in ipairs(entries) do
-        accumulated = accumulated + e[3]
-        thresholds[i] = accumulated * 10000 / total_weight
-    end
-
-    -- Pass 1: seek unimpacted plots.
-    local current_idx = 1
-    local pass_one_complete = false
-
-    for _ = 1, num_to_place do
-        -- Roll for resource type.
-        local roll = Map.Rand(10000, "Choose resource type")
-        local chosen_entry = 1
-        for i, t in ipairs(thresholds) do
-            if roll < t then
-                chosen_entry = i
-                break
+    local num_placed = 0
+    for _ = 1, math.ceil(#plot_list / frequency) do
+        local roll = Map.Rand(10000, "Choose resource type") * total_weight / 10000
+        local chosen, weight = entries[#entries], 0
+        for _, entry in ipairs(entries) do
+            weight = weight + math.max(0, entry[3])
+            if roll < weight then chosen = entry; break end
+        end
+        local key = Lekmap_ResourceDefs.GetKey(chosen[1])
+        local best, lowest = nil, 98
+        -- Keep the original two-pass policy: first clear tile, then least
+        -- impacted legal tile. Recheck suitability for the chosen resource.
+        for _, index in ipairs(plot_list) do
+            local entry = plot_cache[index]
+            if entry and key and Lekmap_Resources.CanPlaceAt(key, entry.x, entry.y) then
+                local impact = Lekmap_Impact.GetValue(layer, entry.x, entry.y)
+                if impact < lowest then best, lowest = entry, impact end
+                if impact == 0 then break end
             end
         end
-
-        local entry = entries[chosen_entry]
-        local resource_id       = entry[1]
-        local resource_quantity = entry[2]
-        local min_radius        = entry[4]
-        local max_radius        = entry[5]
-        local placed            = false
-
-        if not pass_one_complete then
-            -- Walk sequentially through unvisited plots, looking for impact == 0.
-            for idx = current_idx, #plot_list do
-                current_idx = idx + 1
-                if idx == #plot_list then
-                    pass_one_complete = true
-                end
-
-                local plot_index = plot_list[idx]
-                if not Lekmap_Impact.IsImpacted(layer, plot_cache[plot_index].x, plot_cache[plot_index].y) then
-                    local px = plot_cache[plot_index].x
-                    local py = plot_cache[plot_index].y
-                    local resource_plot = Map.GetPlot(px, py)
-                    if resource_plot:GetResourceType(-1) == -1 then
-                        local radius_add = 0
-                        if max_radius > min_radius then
-                            radius_add = Map.Rand(max_radius - min_radius + 1, "Resource radius")
-                        end
-                        resource_plot:SetResourceType(resource_id, resource_quantity)
-                        Lekmap_Impact.PlaceImpact(layer, px, py, min_radius + radius_add)
-
-                        amounts_placed[resource_id] = (amounts_placed[resource_id] or 0) + resource_quantity
-                        if Game.GetResourceUsageType(resource_id) == ResourceUsageTypes.RESOURCEUSAGE_LUXURY then
-                            total_lux_placed = total_lux_placed + 1
-                        end
-                        -- Force feature if needed.
-                        local rkey = Lekmap_ResourceDefs.GetKey(resource_id)
-                        if rkey then
-                            Lekmap_Resources.ForceFeatureAfterPlacement(rkey, px, py, nil)
-                        end
-                        if plot_cache[plot_index] then plot_cache[plot_index].has_resource = true end
-                        placed = true
-                        num_placed = num_placed + 1
-                        break
-                    end
-                end
-            end
-        end
-
-        -- Pass 2: fallback -- find plot with lowest impact value.
-        if not placed and pass_one_complete then
-            local lowest_impact  = 98
-            local best_plot_index = nil
-            for _, plot_index in ipairs(plot_list) do
-                local px = plot_cache[plot_index].x
-                local py = plot_cache[plot_index].y
-                local val = Lekmap_Impact.GetValue(layer, px, py)
-                if val < lowest_impact then
-                    local resource_plot = Map.GetPlot(px, py)
-                    if resource_plot:GetResourceType(-1) == -1 then
-                        lowest_impact   = val
-                        best_plot_index = plot_index
-                    end
-                end
-            end
-            if best_plot_index then
-                local px = plot_cache[best_plot_index].x
-                local py = plot_cache[best_plot_index].y
-                local resource_plot = Map.GetPlot(px, py)
-                local radius_add = 0
-                if max_radius > min_radius then
-                    radius_add = Map.Rand(max_radius - min_radius + 1, "Resource radius")
-                end
-                resource_plot:SetResourceType(resource_id, resource_quantity)
-                Lekmap_Impact.PlaceImpact(layer, px, py, min_radius + radius_add)
-                amounts_placed[resource_id] = (amounts_placed[resource_id] or 0) + resource_quantity
-                -- Force feature if needed.
-                local rkey2 = Lekmap_ResourceDefs.GetKey(resource_id)
-                if rkey2 then
-                    Lekmap_Resources.ForceFeatureAfterPlacement(rkey2, px, py, nil)
-                end
-                if plot_cache[best_plot_index] then plot_cache[best_plot_index].has_resource = true end
-                num_placed = num_placed + 1
-            end
+        if best and PlaceValidated(best.x, best.y, key, chosen[2], layer, chosen[4], chosen[5]) then
+            num_placed = num_placed + 1
         end
     end
-
     return num_placed
 end
 
@@ -823,53 +696,21 @@ end
 --  @return                  number left unplaced
 ------------------------------------------------------------------------------
 function Lekmap_Resources.PlaceSpecificNumber(resource_id, quantity, amount, ratio, layer, min_radius, max_radius, plot_list)
-    if plot_list == nil or #plot_list == 0 then return amount end
-
-    local check_impact = (layer ~= nil and layer > 0)
-    local num_to_place = math.min(amount, math.ceil(ratio * #plot_list))
-    local num_left     = amount
-
-    for _ = 1, num_to_place do
-        for _, plot_index in ipairs(plot_list) do
-            local proceed = true
-            local px = plot_cache[plot_index].x
-            local py = plot_cache[plot_index].y
-
-            if check_impact and Lekmap_Impact.IsImpacted(layer, px, py) then
-                proceed = false
-            end
-
-            if proceed then
-                local resource_plot = Map.GetPlot(px, py)
-                if resource_plot:GetResourceType(-1) == -1 then
-                    resource_plot:SetResourceType(resource_id, quantity)
-                    amounts_placed[resource_id] = (amounts_placed[resource_id] or 0) + (quantity > 0 and quantity or 1)
-                    if Game.GetResourceUsageType(resource_id) == ResourceUsageTypes.RESOURCEUSAGE_LUXURY then
-                        total_lux_placed = total_lux_placed + 1
-                    end
-                    num_left = num_left - 1
-
-                    -- Force feature if this resource supports it and plot is bare.
-                    local rkey = Lekmap_ResourceDefs.GetKey(resource_id)
-                    if rkey then
-                        Lekmap_Resources.ForceFeatureAfterPlacement(rkey, px, py, nil)
-                    end
-
-                    if check_impact then
-                        local radius_add = 0
-                        if max_radius > min_radius then
-                            radius_add = Map.Rand(1 + max_radius - min_radius, "Resource radius")
-                        end
-                        Lekmap_Impact.PlaceImpact(layer, px, py, min_radius + radius_add)
-                    end
-                    if plot_cache[plot_index] then plot_cache[plot_index].has_resource = true end
-                    break
-                end
+    if not plot_list or #plot_list == 0 then return amount end
+    local key = Lekmap_ResourceDefs.GetKey(resource_id)
+    if not key then return amount end
+    local limit = math.min(amount, math.ceil(ratio * #plot_list))
+    local placed = 0
+    for _, index in ipairs(plot_list) do
+        if placed >= limit then break end
+        local entry = plot_cache[index]
+        if entry and (not layer or layer <= 0 or not Lekmap_Impact.IsImpacted(layer, entry.x, entry.y)) then
+            if PlaceValidated(entry.x, entry.y, key, quantity, layer, min_radius, max_radius) then
+                placed = placed + 1
             end
         end
     end
-
-    return num_left
+    return amount - placed
 end
 
 ------------------------------------------------------------------------------
@@ -961,6 +802,12 @@ end
 ------------------------------------------------------------------------------
 
 local initialized = false
+
+function Lekmap_Resources.Reset()
+    initialized = false
+    plot_cache, collision_data, amounts_placed, reachability_cache = {}, {}, {}, {}
+    map_width, map_height, total_lux_placed, barren_plots = 0, 0, 0, 0
+end
 
 ------------------------------------------------------------------------------
 --- Initialize the resource system: enum lookups, resource definitions,

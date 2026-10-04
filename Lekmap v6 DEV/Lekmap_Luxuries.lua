@@ -423,7 +423,7 @@ local function BuildMergedRegionalMaxWeights()
     for terrain = 1, 9 do
         local wm = Lekmap_Luxuries.REGIONAL_LUXURY_WEIGHTS_BY_TERRAIN[terrain]
         if wm then
-            for key, w in pairs(wm) do
+            for key, w in Lekmap_Utilities.OrderedPairs(wm) do
                 w = tonumber(w) or 0
                 if w > 0 then
                     merged[key] = math.max(merged[key] or 0, w)
@@ -455,7 +455,7 @@ local function CollectAllActiveLuxuryKeysSorted()
     local t = {}
     local active = Lekmap_ResourceDefs.active
     if not active then return t end
-    for key, entry in pairs(active) do
+    for key, entry in Lekmap_Utilities.OrderedPairs(active) do
         if entry.def and entry.def.class == "luxury" then
             table.insert(t, key)
         end
@@ -496,14 +496,9 @@ local function PlotHexDistance(x1, y1, x2, y2, max_cap)
     if not center or not target then
         return max_cap
     end
-    for ring = 1, max_cap do
-        for ring_plot in Lekmap_HexUtil.PlotRingIterator(center, ring) do
-            if ring_plot:GetX() == x2 and ring_plot:GetY() == y2 then
-                return ring
-            end
-        end
-    end
-    return max_cap
+    -- Civ V supplies the same wrapped hex distance directly. Enumerating
+    -- every intervening ring costs thousands of plot visits for each pair.
+    return math.min(max_cap,Map.PlotDistance(x1,y1,x2,y2))
 end
 
 --- World / deferred luxury scatter: skip tiles inside the **CITY_STATE** impact ripples.
@@ -610,17 +605,14 @@ end
 
 local function PlotTouchesOcean(plot)
     if not plot then return false end
-    for np in Lekmap_HexUtil.PlotRingIterator(plot, 1) do
-        if np:GetPlotType() == PlotTypes.PLOT_OCEAN then
-            return true
-        end
-    end
-    return false
+    if plot:IsWater() then return Lekmap_Utilities.GetWaterKind(plot) == "ocean" end
+    return Lekmap_Utilities.AdjacentToOcean(plot:GetX(), plot:GetY())
 end
 
 local function PlotIsInlandSeaCoastalLandPlot(plot)
     if not plot then return false end
-    return plot:IsCoastalLand() and plot:IsFreshWater() and not PlotTouchesOcean(plot)
+    if plot:IsWater() then return Lekmap_Utilities.GetWaterKind(plot) == "inland_sea" end
+    return Lekmap_Utilities.AdjacentToInlandSea(plot:GetX(), plot:GetY())
 end
 
 --- Option 17: start plot qualifies for one guaranteed WHALE/CRAB/PEARLS near capital.
@@ -714,7 +706,7 @@ end
 local function RollCoastalLuxuryType()
     local split_cap = Lekmap_Luxuries.GetSplitCap(Lekmap_Regions.GetRegionCount())
     local keys, weights = {}, {}
-    for key, w in pairs(Lekmap_Luxuries.COASTAL_LUXURY_WEIGHTS) do
+    for key, w in Lekmap_Utilities.OrderedPairs(Lekmap_Luxuries.COASTAL_LUXURY_WEIGHTS) do
         w = tonumber(w) or 0
         if w > 0 and Lekmap_ResourceDefs.IsActive(key) and Lekmap_Luxuries.IsCoreCoastLuxuryKey(key) then
             local count = luxury_assignment_count[key] or 0
@@ -757,7 +749,7 @@ local function PickWeightedRing(weights_by_ring, max_ring)
 end
 
 --- Try to place one luxury at (x,y); uses Lekmap_Resources.PlaceOne (luxury impact from class).
-local function TryPlaceLuxuryAt(key, x, y)
+local function CanPlaceLuxuryAt(key, x, y, start_plot, radius)
     if Lekmap_Resources.IsCollision(x, y) then
         return false
     end
@@ -765,6 +757,7 @@ local function TryPlaceLuxuryAt(key, x, y)
     if not plot or plot:GetResourceType(-1) ~= -1 then
         return false
     end
+    if start_plot and not Lekmap_Resources.CanSupplyStart(key, x, y, start_plot, radius) then return false end
     Lekmap_Resources.RefreshPlotCacheAt(x, y)
     local map_w = select(1, Lekmap_Resources.GetMapDimensions())
     local idx = y * map_w + x + 1
@@ -779,7 +772,10 @@ local function TryPlaceLuxuryAt(key, x, y)
     if not Lekmap_Resources.IsValidPlotForResource(entry, active.def) then
         return false
     end
-    return Lekmap_Resources.PlaceOne(x, y, key, 1)
+    return Lekmap_Resources.CanPlaceAt(key,x,y)
+end
+local function TryPlaceLuxuryAt(key,x,y,start_plot,radius)
+    return CanPlaceLuxuryAt(key,x,y,start_plot,radius) and Lekmap_Resources.PlaceOne(x,y,key,1)
 end
 
 --- Place `count` luxuries via weighted ring search from start_plot.
@@ -794,7 +790,24 @@ local function PlaceLuxuriesRingWeighted(start_plot, key, count, weights_by_ring
     local left = count
     local attempts = 0
     max_attempts = max_attempts or (count * 25)
-    while left > 0 and attempts < max_attempts do
+    -- Hundreds of weighted retries cannot create space on an exhausted ring.
+    -- Keep the weighted draws and key cascade for viable tiles, but stop as
+    -- soon as this resource has no remaining legal tile in its search area.
+    local available,available_count={},0
+    for plot in Lekmap_HexUtil.PlotAreaSpiralIterator(Map.GetPlot(start_plot.x,start_plot.y),desperate_ring_max,nil,nil,nil,false) do
+        local x,y=plot:GetX(),plot:GetY()
+        local index=plot:GetPlotIndex()+1
+        if not available[index] and CanPlaceLuxuryAt(key,x,y,start_plot,desperate_ring_max) then
+            available[index]=true;available_count=available_count+1
+        end
+    end
+    local function place(index,x,y)
+        if available[index] and TryPlaceLuxuryAt(key,x,y,start_plot,desperate_ring_max) then
+            available[index]=nil;available_count=available_count-1;return true
+        end
+        return false
+    end
+    while left > 0 and attempts < max_attempts and available_count>0 do
         attempts = attempts + 1
         local ring = PickWeightedRing(weights_by_ring, ring_cap)
         local indices = Lekmap_Resources.GetShuffledRingPlotIndices(start_plot.x, start_plot.y, ring)
@@ -804,7 +817,7 @@ local function PlaceLuxuriesRingWeighted(start_plot, key, count, weights_by_ring
             local i0 = plot_index - 1
             local y = math.floor(i0 / map_w)
             local x = i0 - y * map_w
-            if TryPlaceLuxuryAt(key, x, y) then
+            if place(plot_index,x,y) then
                 left = left - 1
                 placed_this = true
                 break
@@ -819,7 +832,7 @@ local function PlaceLuxuriesRingWeighted(start_plot, key, count, weights_by_ring
                 local i0 = plot_index - 1
                 local yy = math.floor(i0 / map_w)
                 local xx = i0 - yy * map_w
-                if TryPlaceLuxuryAt(key, xx, yy) then
+                if place(plot_index,xx,yy) then
                     left = left - 1
                     placed_this = true
                     break
@@ -834,7 +847,7 @@ local function PlaceLuxuriesRingWeighted(start_plot, key, count, weights_by_ring
                 local i0 = plot_index - 1
                 local yy = math.floor(i0 / map_w)
                 local xx = i0 - yy * map_w
-                if TryPlaceLuxuryAt(key, xx, yy) then
+                if place(plot_index,xx,yy) then
                     left = left - 1
                     placed_this = true
                     break
@@ -859,7 +872,7 @@ local function CollectRegionalCandidatesFromWeightMap(weight_map, split_cap)
         return keys, weights
     end
     split_cap = split_cap or 1
-    for key, w in pairs(weight_map) do
+    for key, w in Lekmap_Utilities.OrderedPairs(weight_map) do
         w = tonumber(w) or 0
         if w > 0
             and Lekmap_ResourceDefs.IsActive(key)
@@ -889,7 +902,7 @@ function Lekmap_Luxuries.AssignToRegion(region_index)
     if #keys == 0 then
         local merged = BuildMergedRegionalMaxWeights()
         keys, weights = {}, {}
-        for key, w in pairs(merged) do
+        for key, w in Lekmap_Utilities.OrderedPairs(merged) do
             w = tonumber(w) or 0
             if w > 0
                 and Lekmap_ResourceDefs.IsActive(key)
@@ -1006,7 +1019,7 @@ function Lekmap_Luxuries.AssignRoles()
         end
         if not chosen then
             local ck, cw = {}, {}
-            for key, w in pairs(merged_regional) do
+            for key, w in Lekmap_Utilities.OrderedPairs(merged_regional) do
                 w = tonumber(w) or 0
                 if w > 0
                     and LuxuryKeyEligibleForRegionalAssignment(key)
@@ -1040,7 +1053,7 @@ function Lekmap_Luxuries.AssignRoles()
     end
 
     local random_keys, random_weights = {}, {}
-    for key, w in pairs(merged_regional) do
+    for key, w in Lekmap_Utilities.OrderedPairs(merged_regional) do
         w = tonumber(w) or 0
         if w > 0
             and LuxuryKeyEligibleForRegionalAssignment(key)
@@ -1053,7 +1066,7 @@ function Lekmap_Luxuries.AssignRoles()
         end
     end
     if not coast_blocked then
-        for key, w in pairs(Lekmap_Luxuries.COASTAL_LUXURY_WEIGHTS) do
+        for key, w in Lekmap_Utilities.OrderedPairs(Lekmap_Luxuries.COASTAL_LUXURY_WEIGHTS) do
             w = tonumber(w) or 0
             if w > 0
                 and Lekmap_ResourceDefs.IsActive(key)
@@ -1149,7 +1162,7 @@ local function BuildOrderedStartFallbackKeys(region_index)
     local wm = Lekmap_Luxuries.REGIONAL_LUXURY_WEIGHTS_BY_TERRAIN[rt]
     if wm then
         local rows = {}
-        for k, w in pairs(wm) do
+        for k, w in Lekmap_Utilities.OrderedPairs(wm) do
             w = tonumber(w) or 0
             if w > 0
                 and not Lekmap_Luxuries.IsCoreCoastLuxuryKey(k)
@@ -1168,7 +1181,7 @@ local function BuildOrderedStartFallbackKeys(region_index)
 
     local merged = BuildMergedRegionalMaxWeights()
     local mk = {}
-    for k, _ in pairs(merged) do
+    for k, _ in Lekmap_Utilities.OrderedPairs(merged) do
         if not Lekmap_Luxuries.IsCoreCoastLuxuryKey(k) and LuxuryKeyEligibleForRegionalAssignment(k) then
             table.insert(mk, k)
         end
@@ -1200,7 +1213,7 @@ local function BuildOrderedCoastalStartKeys(region_index)
 
     add(region_coastal_luxury[region_index])
     local crows = {}
-    for k, w in pairs(Lekmap_Luxuries.COASTAL_LUXURY_WEIGHTS) do
+    for k, w in Lekmap_Utilities.OrderedPairs(Lekmap_Luxuries.COASTAL_LUXURY_WEIGHTS) do
         w = tonumber(w) or 0
         if w > 0 and Lekmap_ResourceDefs.IsActive(k) and Lekmap_Luxuries.IsCoreCoastLuxuryKey(k) then
             table.insert(crows, { k = k, w = w })
@@ -1512,9 +1525,13 @@ function Lekmap_Luxuries.PlaceAtCityState(x, y, city_state_luxury_key)
     if not plot_list or #plot_list == 0 then
         return false
     end
-    local left = Lekmap_Resources.PlaceSpecificNumber(resource_id, 1, 1, 1.0,
-        IMPACT_LAYER.LUXURY, 3, 5, plot_list)
-    return left == 0
+    for _, index in ipairs(plot_list) do
+        local entry = Lekmap_Resources.GetPlotCache()[index]
+        if entry and Lekmap_Resources.PlaceOne(entry.x, entry.y, city_state_luxury_key, 1) then
+            return true
+        end
+    end
+    return false
 end
 
 --- One luxury per valid city-state from `GetAssignedToCS()` (round-robin pool).
@@ -1531,7 +1548,7 @@ function Lekmap_Luxuries.PlaceAllCityStateLuxuries()
     local all = Lekmap_CityStates.GetAllPlots()
     local placed = 0
     local tried = 0
-    for cs_number, pdata in pairs(all) do
+    for cs_number, pdata in Lekmap_Utilities.OrderedPairs(all) do
         local ok_cs = true
         if Lekmap_CityStates.IsValid then
             ok_cs = Lekmap_CityStates.IsValid(cs_number)

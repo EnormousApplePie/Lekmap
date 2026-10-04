@@ -136,7 +136,7 @@ local function CreateTerrainCounts()
         grass       = 0,   plains      = 0,   desert = 0,   tundra  = 0,   snow = 0,
         forest      = 0,   jungle      = 0,   marsh  = 0,
         river       = 0,   floodplain  = 0,   oasis  = 0,
-        coastalLand = 0,   nextToCoast = 0,
+        coastalLand = 0,   nextToCoast = 0, inlandSeaCoast = 0,
     }
 end
 
@@ -610,6 +610,7 @@ function Lekmap_Regions.MeasureTerrain(region, coastal_data, next_to_coast_data)
                     end
 
                     CountCoastal()
+                    if Lekmap_Utilities.AdjacentToInlandSea(x, y) then counts.inlandSeaCoast = counts.inlandSeaCoast + 1 end
                     CountFeature()
 
                     if plot:IsRiverSide() then
@@ -746,6 +747,9 @@ function Lekmap_Regions.Generate(args)
     local num_civs           = args.numCivs or 0
     local coastal_data       = args.coastalData
     local next_to_coast_data = args.nextToCoastData
+    if not coastal_data or not next_to_coast_data then
+        coastal_data, next_to_coast_data = Lekmap_Utilities.GenerateNextToCoastalLandDataTables()
+    end
 
     if num_civs == 0 then
         print("  WARNING: numCivs is 0, no regions will be generated.")

@@ -22,7 +22,7 @@ include("MultilayeredFractal");
 function GetMapScriptInfo()
 	local world_age, temperature, rainfall, sea_level, resources = GetCoreMapOptions()
 	return {
-		Name = "Lekmap: Pangaea - Fractal (v6)",
+		Name = "Lekmap: Pangaea - Fractal (v6.1)",
 		Description = "A map script made for Lekmod based on HB's Mapscript v8.1. Pangaea - Fractal",
 		IsAdvancedMap = false,
 		IconIndex = 0,
@@ -91,14 +91,14 @@ function GetMapScriptInfo()
 			},
 
 			----------------------------------------------------------------
-			-- OPTION 5: [Spawns] Start Quality
+			-- OPTION 5: [Spawns] Strategic Access
 			----------------------------------------------------------------
 			{
-				Name = "[Spawns] Start Quality",
+				Name = "[Spawns] Strategic Access",
 				Values = {
-					"Legendary Start - Strat Balance",
-					"Legendary - Strat Balance + Uranium",
-					"TXT_KEY_MAP_OPTION_STRATEGIC_BALANCE",
+					"All except Uranium",
+					"All Strategics",
+					"Iron, Horses & Oil",
 					"Strategic Balance With Coal",
 					"Strategic Balance With Aluminum",
 					"Strategic Balance With Coal & Aluminum",
@@ -116,7 +116,7 @@ function GetMapScriptInfo()
 				Values = {
 					"Close",
 					"Normal",
-					"Far - Warning: May sometimes crash during map generation",
+					"Far",
 				},
 				DefaultValue = 2,
 				SortPriority = -79,
@@ -498,6 +498,19 @@ function GetMapScriptInfo()
 				DefaultValue = 1,
 				SortPriority = -71,
 			},
+            -- Append controls so the original option indices remain stable.
+            {
+                Name = "[Resources] Strategic Distribution",
+                Values = { "Balanced Access", "Balanced Openings + Contested Expansion", "Contested Strategics" },
+                DefaultValue = 2,
+                SortPriority = -75,
+            },
+            {
+                Name = "[Spawns] Competitive Balance",
+                Values = { "Competitive", "Standard Lekmap" },
+                DefaultValue = 1,
+                SortPriority = -81,
+            },
 		},
 	}
 end
@@ -567,6 +580,23 @@ function PangaeaFractalWorld:GeneratePlotTypes(args)
 	if(args == nil) then args = {}; end
 	
 	local allcomplete = false;
+    local attempts = 0;
+    local max_attempts = args.max_attempts or 128;
+    local best_candidate, best_land = nil, 0;
+    local function retain_candidate(land_count, only_area)
+        if land_count > best_land then
+            best_land, best_candidate = land_count, {};
+            for i=1,self.num_plots_x*self.num_plots_y do
+                local on_mainland = not only_area or Map.GetPlotByIndex(i-1):GetArea()==only_area;
+                best_candidate[i] = on_mainland and self.plot_types[i] or PlotTypes.PLOT_OCEAN;
+            end
+        end
+    end
+    -- Resolve random climate/age once, not again whenever a candidate fails.
+    local sea_level = Map.GetCustomOption(4);
+    if sea_level == 4 then sea_level = 1 + Map.Rand(3, "Random Sea Level - Lua"); end
+    local world_age = Map.GetCustomOption(1);
+    if world_age == 5 then world_age = 1 + Map.Rand(3, "Random World Age - Lua"); end
 
 	while allcomplete == false do
 
@@ -592,15 +622,6 @@ function PangaeaFractalWorld:GeneratePlotTypes(args)
 		local xshiftamt = 0;
 		local xstart, xend = 0,0;
 		local ystart, yend = 0,0;
-
-		local sea_level = Map.GetCustomOption(4)
-		if sea_level == 4 then
-			sea_level = 1 + Map.Rand(3, "Random Sea Level - Lua");
-		end
-		local world_age = Map.GetCustomOption(1)
-		if world_age == 5 then
-			world_age = 1 + Map.Rand(3, "Random World Age - Lua");
-		end
 
 		-- Set Sea Level according to user selection.
 		local water_percent = sea_level_normal;
@@ -681,6 +702,17 @@ function PangaeaFractalWorld:GeneratePlotTypes(args)
 			local iAttempts = 0;
 			local iWaterThreshold, biggest_area, iNumTotalLandTiles, iNumBiggestAreaTiles, iBiggestID;
 			while done == false do
+                attempts = attempts + 1;
+                if attempts > max_attempts then
+                    print("Lekmap recovery: using the best connected candidate after " .. max_attempts .. " attempts.");
+                    if best_candidate and best_land >= self.num_plots_x*self.num_plots_y*0.30 then
+                        self.plot_types = best_candidate;
+                    else
+                        self.plot_types = Lekmap_Utilities.EmergencyPlotTypes();
+                    end
+                    return self.plot_types;
+                end
+                self.plot_types = table.fill(PlotTypes.PLOT_OCEAN, self.num_plots_x * self.num_plots_y);
 				local grain_dice = Map.Rand(7, "Continental Grain roll - LUA Pangaea");
 				if grain_dice < 4 then
 					grain_dice = 1;
@@ -702,7 +734,7 @@ function PangaeaFractalWorld:GeneratePlotTypes(args)
 				iNumTotalLandTiles = 0;
 				for x = 0, self.num_plots_x - 1 do
 					for y = 0, self.num_plots_y - 1 do
-						local i = y * self.num_plots_x + x;
+						local i = y * self.num_plots_x + x + 1;
 						local val = self.continents_frac:GetHeight(x, y);
 						if(val <= iWaterThreshold) then
 							self.plot_types[i] = PlotTypes.PLOT_OCEAN;
@@ -717,9 +749,10 @@ function PangaeaFractalWorld:GeneratePlotTypes(args)
 				Map.RecalculateAreas();
 		
 				biggest_area = Map.FindBiggestArea(false);
-				iNumBiggestAreaTiles = biggest_area:GetNumTiles();
+				iNumBiggestAreaTiles = biggest_area and biggest_area:GetNumTiles() or 0;
+                if biggest_area then retain_candidate(iNumBiggestAreaTiles, biggest_area:GetID()); end
 				-- Now test the biggest landmass to see if it is large enough.
-				if iNumBiggestAreaTiles >= iNumTotalLandTiles * 1 then
+				if iNumTotalLandTiles > 0 and iNumBiggestAreaTiles >= iNumTotalLandTiles then
 					done = true;
 					iBiggestID = biggest_area:GetID();
 				end
@@ -750,7 +783,7 @@ function PangaeaFractalWorld:GeneratePlotTypes(args)
 			local iHillsTop2 = self.hills_frac:GetHeight(hillsTop2);
 			local iHillsClumps = self.mountains_frac:GetHeight(hillsClumps);
 			local iHillsNearMountains = self.mountains_frac:GetHeight(hillsNearMountains);
-			local iMountainThreshold = self.mountains_frac:GetHeight(mountains);
+			local iMountainThreshold = self.mountains_frac:GetHeight(math.min(100, mountains));
 			local iPassThreshold = self.hills_frac:GetHeight(hillsNearMountains);
 			-- Get height values for tectonic islands
 			local iMountain100 = self.mountains_frac:GetHeight(100);
@@ -764,7 +797,7 @@ function PangaeaFractalWorld:GeneratePlotTypes(args)
 			for x = 0, self.num_plots_x - 1 do
 				for y = 0, self.num_plots_y - 1 do
 		
-					local i = y * self.num_plots_x + x;
+					local i = y * self.num_plots_x + x + 1;
 					local val = self.continents_frac:GetHeight(x, y);
 					local mountainVal = self.mountains_frac:GetHeight(x, y);
 					local hillVal = self.hills_frac:GetHeight(x, y);
@@ -773,7 +806,7 @@ function PangaeaFractalWorld:GeneratePlotTypes(args)
 						self.plot_types[i] = PlotTypes.PLOT_OCEAN;
 				
 						if tectonic_islands then -- Build islands in oceans along tectonic ridge lines - Brian
-							if (mountainVal == iMountain100) then -- Isolated peak in the ocean
+							if (mountainVal == iMountain100) and world_age ~= 4 then -- Isolated peak in the ocean
 								self.plot_types[i] = PlotTypes.PLOT_MOUNTAIN;
 							elseif (mountainVal == iMountain99) then
 								self.plot_types[i] = PlotTypes.PLOT_HILLS;
@@ -783,7 +816,7 @@ function PangaeaFractalWorld:GeneratePlotTypes(args)
 						end
 					
 					else
-						if (mountainVal >= iMountainThreshold) then
+						if (mountainVal >= iMountainThreshold) and world_age ~= 4 then
 							if (hillVal >= iPassThreshold) then -- Mountain Pass though the ridgeline - Brian
 								self.plot_types[i] = PlotTypes.PLOT_HILLS;
 							else -- Mountain
@@ -839,7 +872,7 @@ function PangaeaFractalWorld:GeneratePlotTypes(args)
 			local landincol = 0;
 			local chkstart = 0;
 			local chkend = 0;
-			local chokepoint = 16;
+			local chokepoint = math.min(16, math.max(4, math.floor(math.min(iW, iH) * 0.30)));
 			local bXChkFail = false;
 			local bYChkFail = false;
 			local bLastLand = false;
@@ -851,12 +884,12 @@ function PangaeaFractalWorld:GeneratePlotTypes(args)
 			print("-----------------------------------");
 			print("Checking Y Chokes");
 			print("-----------------------------------");
-			for x = 1, iW do
+			for x = 0, iW - 1 do
 				bfland = false;
 				landincol = 0;
 		
 				for y = 2, iH-2  do
-					local i = iW * y + x;
+					local i = iW * y + x + 1;
 					--print("Plot Location = ", i);
 					if self.plot_types[i] ~= PlotTypes.PLOT_OCEAN then
 						landincol = landincol + 1;
@@ -884,6 +917,7 @@ function PangaeaFractalWorld:GeneratePlotTypes(args)
 				end
 			end
 		
+            if cont > biggest then mainstart = startcol; mainend = iW - 1; end
 			xstart = mainstart;
 			xend = mainend;
 
@@ -896,8 +930,9 @@ function PangaeaFractalWorld:GeneratePlotTypes(args)
 			for x = chkstart, chkend do
 				landincol = 0;
 				contlandincol = 0;
+                bLastLand = false;
 				for y = 2, iH-2  do
-					local i = iW * y + x;
+					local i = iW * y + x + 1;
 					--print("Plot Location = ", i);
 					if self.plot_types[i] ~= PlotTypes.PLOT_OCEAN then
 					
@@ -917,14 +952,15 @@ function PangaeaFractalWorld:GeneratePlotTypes(args)
 					end
 				end
 
+                contlandincol = math.max(contlandincol, landincol);
 				--print("Checking Col:", x, "Continuous Land In Col: ", contlandincol);
 
 				if landincol_prev1 + landincol_prev2 + contlandincol < 3 * chokepoint then
 					--print("Choke Point in Col: ", x);
 					bXChkFail = true;
 				end
-				landincol_prev2 = contlandincol;
-				landincol_prev1 = landincol_prev2;
+				landincol_prev2 = landincol_prev1;
+				landincol_prev1 = contlandincol;
 			end
 
 
@@ -940,8 +976,8 @@ function PangaeaFractalWorld:GeneratePlotTypes(args)
 				bfland = false;
 				landincol = 0;
 		
-				for x = 1, iW  do
-					local i = iW * y + x;
+				for x = 0, iW - 1 do
+					local i = iW * y + x + 1;
 					--print("Plot Location = ", i);
 					if self.plot_types[i] ~= PlotTypes.PLOT_OCEAN then
 						landincol = landincol + 1;
@@ -969,6 +1005,7 @@ function PangaeaFractalWorld:GeneratePlotTypes(args)
 				end
 			end
 	
+            if cont > biggest then mainstart = startcol; mainend = iH - 2; end
 			ystart = mainstart;
 			yend = mainend;
 
@@ -981,8 +1018,9 @@ function PangaeaFractalWorld:GeneratePlotTypes(args)
 			for y = chkstart, chkend do
 				landincol = 0;
 				contlandincol = 0;
-				for x = 1, iW  do
-					local i = iW * y + x;
+                bLastLand = false;
+				for x = 0, iW - 1 do
+					local i = iW * y + x + 1;
 					--print("Plot Location = ", i);
 					if self.plot_types[i] ~= PlotTypes.PLOT_OCEAN then
 					
@@ -1002,6 +1040,7 @@ function PangaeaFractalWorld:GeneratePlotTypes(args)
 					end
 				end
 
+                contlandincol = math.max(contlandincol, landincol);
 				--print("Checking Col:", y, "Continuous Land In Col: ", contlandincol);
 
 				if contlandincol < chokepoint then
@@ -1075,117 +1114,47 @@ function PangaeaFractalWorld:GeneratePlotTypes(args)
 		--clear area around pangaea
 		local iW, iH = Map.GetGridSize();
 		for x = 0, xstart - 1 do --clear west side of map
-			for y = 0, iH  do
-				destPlotIndex = iW * y + x;
+			for y = 0, iH - 1 do
+				local destPlotIndex = iW * y + x + 1;
 				self.plot_types[destPlotIndex] = PlotTypes.PLOT_OCEAN;
 			end
 		end
 
 
-		for x = xend + 1, iW  do --clear east side of map
-			for y = 0, iH  do
-				destPlotIndex = iW * y + x;
+		for x = xend + 1, iW - 1 do --clear east side of map
+			for y = 0, iH - 1 do
+				local destPlotIndex = iW * y + x + 1;
 				self.plot_types[destPlotIndex] = PlotTypes.PLOT_OCEAN;
 			end
 		end
 
 		for y = 0, ystart - 1 do --clear south side of map
-			for x = 0, iW  do
-				destPlotIndex = iW * y + x;
+			for x = 0, iW - 1 do
+				local destPlotIndex = iW * y + x + 1;
 				self.plot_types[destPlotIndex] = PlotTypes.PLOT_OCEAN;
 			end
 		end
 	
-		for y = yend + 1, iH  do --clear north side of map
-			for x = 0, iW  do
-				destPlotIndex = iW * y + x;
+		for y = yend + 1, iH - 1 do --clear north side of map
+			for x = 0, iW - 1 do
+				local destPlotIndex = iW * y + x + 1;
 				self.plot_types[destPlotIndex] = PlotTypes.PLOT_OCEAN;
 			end
 		end
 
-		--map generated now shift to center
-		-- x shift first
-		if xshift == 1 then --shift east
-			print("-----------------------------------");
-			print("Shifting East........");
-			print("-----------------------------------");
-
-			for x = iW, 0, -1 do
-				for y = iH, 0, -1 do
-					local destPlotIndex = iW * y + x;
-					local sourcePlotIndex = destPlotIndex - math.abs(xshiftamt);
-					--print("Moving Plot: ", sourcePlotIndex, "To Location: ",destPlotIndex );
-					self.plot_types[destPlotIndex] = self.plot_types[sourcePlotIndex]
-				end	
-			end
-		elseif xshift == 2 then --shift west
-			print("-----------------------------------");
-			print("Shifting West........");
-			print("-----------------------------------");
-
-			for x = 0, iW do
-				for y = 0, iH do
-					local destPlotIndex = iW * y + x;
-					local sourcePlotIndex = destPlotIndex + math.abs(xshiftamt);
-					--print("Moving Plot: ", sourcePlotIndex, "To Location: ",destPlotIndex );
-					self.plot_types[destPlotIndex] = self.plot_types[sourcePlotIndex]
-				end	
-			end
-
-		else
-			--no shift
-		end
-
-
-
-		-- now shift y
-		if yshift == 1 then --shift north
-			print("-----------------------------------");
-			print("Shifting North........");
-			print("-----------------------------------");
-
-			for y = iH, 0, -1 do
-				for x = iW, 0, -1 do
-					local destPlotIndex = iW * y + x;
-					local sourcePlotIndex = destPlotIndex - iW * (math.abs(yshiftamt));
-					--print("Moving Plot: ", sourcePlotIndex, "To Location: ",destPlotIndex );
-					self.plot_types[destPlotIndex] = self.plot_types[sourcePlotIndex]
-				end	
-			end
-		
-			local i = math.abs(yshiftamt);
-			for y = 0, i do
-				for x = 0, iW do
-					destPlotIndex = iW * y + x;
-					self.plot_types[destPlotIndex] = PlotTypes.PLOT_OCEAN;
-				end
-			end
-
-		elseif yshift == 2 then --shift south
-			print("-----------------------------------");
-			print("Shifting South........");
-			print("-----------------------------------");
-
-			for y = 0, iH do
-				for x = 0, iW do
-					local destPlotIndex = iW * y + x;
-					local sourcePlotIndex = destPlotIndex + iW * (math.abs(yshiftamt));
-					--print("Moving Plot: ", sourcePlotIndex, "To Location: ",destPlotIndex );
-					self.plot_types[destPlotIndex] = self.plot_types[sourcePlotIndex]
-				end	
-			end
-		
-			local i = math.abs(yshiftamt);
-			for y = iH-i, iH do
-				for x = 0, iW do
-					destPlotIndex = iW * y + x;
-					self.plot_types[destPlotIndex] = PlotTypes.PLOT_OCEAN;
-				end
-			end
-
-		else
-			--no shift
-		end
+        -- Center without changing the odd/even row parity of the hex grid.
+        local buffer = self.plot_types;
+        local centered = table.fill(PlotTypes.PLOT_OCEAN, iW * iH);
+        yshiftamt = 2 * math.floor(yshiftamt / 2);
+        for y = 0, iH - 1 do
+            for x = 0, iW - 1 do
+                local sx, sy = x - xshiftamt, y - yshiftamt;
+                if sx >= 0 and sx < iW and sy >= 0 and sy < iH then
+                    centered[y * iW + x + 1] = buffer[sy * iW + sx + 1];
+                end
+            end
+        end
+        self.plot_types = centered;
 
 		--Fjordgenerator by t0m:
 		local fjord_distance_setting = Map.GetCustomOption(19);
@@ -1228,9 +1197,11 @@ function PangaeaFractalWorld:GeneratePlotTypes(args)
 				i = 0;
 				while (i == 0)
 				do
-					local PlotIndex = iW * y + x;
+					local PlotIndex = iW * y + x + 1;
 					if self.plot_types[PlotIndex] ~= PlotTypes.PLOT_OCEAN then
-						self.plot_types[PlotIndex] = PlotTypes.PLOT_OCEAN;
+						if x >= 0 and x < iW and y >= 0 and y < iH then
+                                self.plot_types[PlotIndex] = PlotTypes.PLOT_OCEAN;
+                            end
 						j = 1;
 						while (j < fjord_l - 1 + Map.Rand(3, ""))
 						do
@@ -1254,8 +1225,10 @@ function PangaeaFractalWorld:GeneratePlotTypes(args)
 							if x > iW - 18 then
 								i = 1;
 							end
-							local PlotIndex = iW * y + x;
-							self.plot_types[PlotIndex] = PlotTypes.PLOT_OCEAN;
+							local PlotIndex = iW * y + x + 1;
+							if x >= 0 and x < iW and y >= 0 and y < iH then
+                                self.plot_types[PlotIndex] = PlotTypes.PLOT_OCEAN;
+                            end
 							j = j + 1;
 						end
 						i = 1;
@@ -1280,9 +1253,11 @@ function PangaeaFractalWorld:GeneratePlotTypes(args)
 				i = 0;
 				while (i == 0)
 				do
-					local PlotIndex = iW * y + x;
+					local PlotIndex = iW * y + x + 1;
 					if self.plot_types[PlotIndex] ~= PlotTypes.PLOT_OCEAN then
-						self.plot_types[PlotIndex] = PlotTypes.PLOT_OCEAN;
+						if x >= 0 and x < iW and y >= 0 and y < iH then
+                                self.plot_types[PlotIndex] = PlotTypes.PLOT_OCEAN;
+                            end
 						j = 1;
 						while (j < fjord_l - 1 + Map.Rand(3, ""))
 						do
@@ -1306,8 +1281,10 @@ function PangaeaFractalWorld:GeneratePlotTypes(args)
 							if x < 18 then
 								i = 1;
 							end
-							local PlotIndex = iW * y + x;
-							self.plot_types[PlotIndex] = PlotTypes.PLOT_OCEAN;
+							local PlotIndex = iW * y + x + 1;
+							if x >= 0 and x < iW and y >= 0 and y < iH then
+                                self.plot_types[PlotIndex] = PlotTypes.PLOT_OCEAN;
+                            end
 							j = j + 1;
 						end
 						i = 1;
@@ -1332,9 +1309,11 @@ function PangaeaFractalWorld:GeneratePlotTypes(args)
 				i = 0;
 				while (i == 0)
 				do
-					local PlotIndex = iW * y + x;
+					local PlotIndex = iW * y + x + 1;
 					if self.plot_types[PlotIndex] ~= PlotTypes.PLOT_OCEAN then
-						self.plot_types[PlotIndex] = PlotTypes.PLOT_OCEAN;
+						if x >= 0 and x < iW and y >= 0 and y < iH then
+                                self.plot_types[PlotIndex] = PlotTypes.PLOT_OCEAN;
+                            end
 						j = 1;
 						while (j < fjord_l - 1 + Map.Rand(3, ""))
 						do
@@ -1365,8 +1344,10 @@ function PangaeaFractalWorld:GeneratePlotTypes(args)
 							if y < 3 then
 								i = 1;
 							end
-							local PlotIndex = iW * y + x;
-							self.plot_types[PlotIndex] = PlotTypes.PLOT_OCEAN;
+							local PlotIndex = iW * y + x + 1;
+							if x >= 0 and x < iW and y >= 0 and y < iH then
+                                self.plot_types[PlotIndex] = PlotTypes.PLOT_OCEAN;
+                            end
 							j = j + 1;
 						end
 						i = 1;
@@ -1391,9 +1372,11 @@ function PangaeaFractalWorld:GeneratePlotTypes(args)
 				i = 0;
 				while (i == 0)
 				do
-					local PlotIndex = iW * y + x;
+					local PlotIndex = iW * y + x + 1;
 					if self.plot_types[PlotIndex] ~= PlotTypes.PLOT_OCEAN then
-						self.plot_types[PlotIndex] = PlotTypes.PLOT_OCEAN;
+						if x >= 0 and x < iW and y >= 0 and y < iH then
+                                self.plot_types[PlotIndex] = PlotTypes.PLOT_OCEAN;
+                            end
 						j = 1;
 						while (j < fjord_l - 1 + Map.Rand(3, ""))
 						do
@@ -1424,8 +1407,10 @@ function PangaeaFractalWorld:GeneratePlotTypes(args)
 							if y > iH - 9 then
 								i = 1;
 							end
-							local PlotIndex = iW * y + x;
-							self.plot_types[PlotIndex] = PlotTypes.PLOT_OCEAN;
+							local PlotIndex = iW * y + x + 1;
+							if x >= 0 and x < iW and y >= 0 and y < iH then
+                                self.plot_types[PlotIndex] = PlotTypes.PLOT_OCEAN;
+                            end
 							j = j + 1;
 						end
 						i = 1;
@@ -1520,7 +1505,10 @@ function PangaeaFractalWorld:GeneratePlotTypes(args)
 			};
 
 
-		local plotTypesTwo = self.plot_types;
+        SetPlotTypes(self.plot_types);
+        Map.RecalculateAreas();
+        local plotTypesTwo = {};
+        for i = 1, self.num_plots_x * self.num_plots_y do plotTypesTwo[i] = self.plot_types[i]; end
 
 		local iW, iH = Map.GetGridSize();
 		local islMax = islandQty[sizekey] or 24;
@@ -1628,7 +1616,7 @@ function PangaeaFractalWorld:GeneratePlotTypes(args)
 	
 								-- Check this plot for land.
 
-								if self.plot_types[plotIndex] == PlotTypes.PLOT_LAND then
+								if self.plot_types[plotIndex] ~= PlotTypes.PLOT_OCEAN then
 									islLandInRing = ripple_radius;
 									
 									landPlot = plotIndex;
@@ -1642,8 +1630,8 @@ function PangaeaFractalWorld:GeneratePlotTypes(args)
 									break;
 								end
 
-								currentX, currentY = nextX, nextY;
 							end
+							currentX, currentY = nextX, nextY;
 						end
 
 						if islLandInRing ~= 0 then
@@ -1672,7 +1660,7 @@ function PangaeaFractalWorld:GeneratePlotTypes(args)
 					local pullBack = 3;
 
 					-- pull back the radius by 2 to 3 tiles and as long as island will be a radius of 2 then plunk it in da water init bruv!
-					if plotTypesTwo[landPlot] == PlotTypes.PLOT_LAND then
+					if plotTypesTwo[landPlot] ~= PlotTypes.PLOT_OCEAN then
 
 						-- create us an island
 						islLandInRing = islLandInRing - pullBack;
@@ -1773,8 +1761,8 @@ function PangaeaFractalWorld:GeneratePlotTypes(args)
 												end
 											end
 
-											currentX, currentY = nextX, nextY;
 										end
+										currentX, currentY = nextX, nextY;
 									end
 								end
 							end
@@ -1789,10 +1777,9 @@ function PangaeaFractalWorld:GeneratePlotTypes(args)
 		end
 
 		-- make sure islands were created
-		if escapeRedo == 0 then
-			--oh boy something went wrong, regen a new map
-			redoMap = true
-		end
+        if islCount > 0 then
+            print("Lekmap: island target shortfall " .. islCount .. "; no more suitable offshore space.");
+        end
 
 		print("######### Finished Islands #########");
 		
@@ -1835,7 +1822,7 @@ function PangaeaFractalWorld:GeneratePlotTypes(args)
 
 		for y = 0, iH - 1 do
 			for x = 0, iW - 1 do
-				local i = iW * y + x;
+				local i = iW * y + x + 1;
 				if self.plot_types[i] ~= PlotTypes.PLOT_OCEAN then
 					iNumLandTilesInUse = iNumLandTilesInUse + 1;
 				end
@@ -1846,7 +1833,13 @@ function PangaeaFractalWorld:GeneratePlotTypes(args)
 		print("30% Of Map Area: ", iPercent);
 		print("Map Land Tiles: ", iNumLandTilesInUse);
 
-		if iNumLandTilesInUse >= iPercent then
+        SetPlotTypes(self.plot_types);
+        Map.RecalculateAreas();
+        local final_mainland = Map.FindBiggestArea(false);
+        local main_fraction = final_mainland and final_mainland:GetNumTiles() / math.max(1, iNumLandTilesInUse) or 0;
+        -- Fjords and bays are applied after the initial connectivity test.
+        -- Reject a severed supercontinent; small offshore islands remain valid.
+		if iNumLandTilesInUse >= iPercent and main_fraction >= 0.84 then
 			allcomplete = true;
 			print("######### Map Pass #########");
 		else
@@ -1908,7 +1901,7 @@ end
 function FixIslands()
 	--function to change some of the flat land tundra on islands to plains tiles
 	local iW, iH = Map.GetGridSize();
-	local biggest_area = Map.FindBiggestArea(False);
+	local biggest_area = Map.FindBiggestArea(false);
 	local iAreaID = biggest_area:GetID();
 
 	for y = 0, iH - 1 do
@@ -1986,6 +1979,10 @@ end
 
 ------------------------------------------------------------------------------
 function StartPlotSystem()
+    Lekmap_Resources.Reset();
+    local competitive = (Map.GetCustomOption(26) or 1) == 1;
+    local distribution = Map.GetCustomOption(25) or 2;
+    Lekmap_Competition.Begin(competitive);
 	------------------------------------------------------------------------------
 	-- Read player settings from Custom Options.
 	------------------------------------------------------------------------------
@@ -1993,6 +1990,9 @@ function StartPlotSystem()
 	local balancedRegionalsOpt = Map.GetCustomOption(14); -- Yes = allow extended + balanced regional luxuries
 	local balanced_regionals   = (balancedRegionalsOpt == 1);
 	local startQuality    = Map.GetCustomOption(5);
+	if startQuality == 7 then
+        startQuality = distribution == 1 and (1 + Map.Rand(6, "Random strategic access - Lekmap")) or 2;
+	end
 	local allowInlandSea  = Map.GetCustomOption(18);
 	local coastalSetting  = Map.GetCustomOption(16);
 	local coastLuxMode          = Map.GetCustomOption(17);  -- 1–5 coastal luxury policy
@@ -2033,7 +2033,7 @@ function StartPlotSystem()
 	Lekmap_Regions.Generate({
 		method          = 1, -- Biggest Landmass
 		numCivs         = numCivs,
-		resourceSetting = resourceSetting,
+		resource_setting = resourceSetting,
 	});
 
 	------------------------------------------------------------------------------
@@ -2050,6 +2050,7 @@ function StartPlotSystem()
 		startDistance     = startDistance,
 		AllowInlandSea   = (allowInlandSea == 1),
 		collideCoastals  = true,
+        competitive     = competitive,
 	});
 
 	------------------------------------------------------------------------------
@@ -2058,7 +2059,7 @@ function StartPlotSystem()
 	------------------------------------------------------------------------------
 	print("Lekmap: Initializing resource system.");
 	Lekmap_Resources.Initialize({
-		resourceSetting = resourceSetting,
+		resource_setting = resourceSetting,
 	});
 
 	------------------------------------------------------------------------------
@@ -2086,14 +2087,18 @@ function StartPlotSystem()
 	if wonderOption == 14 then
 		wonderAmount = Map.Rand(13, "Number of Wonders To Spawn");
 	elseif wonderOption == 15 then
-		wonderAmount = Map.Rand(3, "") + 3;
+		wonderAmount = nil; -- Use the world-size default.
 	elseif wonderOption == 16 then
-		wonderAmount = Map.Rand(5, "") + 2;
+		wonderAmount = Map.Rand(3, "Wonder count 3-5 - Lekmap") + 3;
+	elseif wonderOption == 17 then
+		wonderAmount = Map.Rand(5, "Wonder count 2-6 - Lekmap") + 2;
 	else
 		wonderAmount = wonderOption - 1;
 	end
-	print("Lekmap: Placing Natural Wonders (" .. wonderAmount .. " targeted).");
-	Lekmap_NaturalWonders.PlaceAll({ wonderAmount = wonderAmount });
+	print("Lekmap: Placing Natural Wonders (" .. tostring(wonderAmount or "world-size default") .. " targeted).");
+	Lekmap_NaturalWonders.PlaceAll({ wonder_amount = wonderAmount });
+    -- Keep region area IDs stable until resource placement is complete.
+    Lekmap_Resources.BuildWorldPlotCache();
 
 	------------------------------------------------------------------------------
 	-- 8. Place resources (luxuries, strategics, bonus).
@@ -2101,16 +2106,20 @@ function StartPlotSystem()
 	------------------------------------------------------------------------------
 	print("Lekmap: Placing resources.");
 	Lekmap_Resources.PlaceAll({
-		resourceSetting             = resourceSetting,
+		resource_setting            = resourceSetting,
 		startQuality                = startQuality,
 		coastLuxMode                = coastLuxMode,
 		additionalCoastalLuxuries   = additionalCoastLuxOpt,
-		strategicBalance            = true,
+		strategicBalance            = guaranteed_strategics,
 		startingLuxuries            = starting_luxuries,
 		additionalStartLuxuries     = additional_start_luxuries,
 		guaranteedStrategics        = guaranteed_strategics,
+        strategicDistribution      = distribution,
 	});
 
+    Lekmap_Competition.Finish(Lekmap_Spawns.GetAllStartPlots());
+    Lekmap_Validation.Finalize({ strategicBalance = guaranteed_strategics, startQuality = startQuality,
+        strategicDistribution = distribution, competitive = competitive });
 	print("Lekmap: StartPlotSystem complete.");
 end
 ------------------------------------------------------------------------------

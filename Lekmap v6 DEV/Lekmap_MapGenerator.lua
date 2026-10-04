@@ -12,6 +12,9 @@
 include("Lekmap_Constants");
 include("Lekmap_HexUtil");
 include("Lekmap_Utilities");
+include("Lekmap_StartRules");
+include("Lekmap_Travel");
+include("Lekmap_Opening");
 include("NaturalWondersCustomMethods");
 include("Lekmap_Impact");
 include("Lekmap_ResourceDefs");
@@ -21,20 +24,20 @@ include("Lekmap_Luxuries");
 include("Lekmap_Strategics");
 include("Lekmap_Bonus");  -- regional start bonuses (majors + city-states)
 include("Lekmap_Spawns");
+include("Lekmap_Competition");
 include("Lekmap_NaturalWonders");
 include("Lekmap_CityStates");
+include("Lekmap_Validation");
 
 ------------------------------------------------------------------------------
 --	Various Map utility functions
 ------------------------------------------------------------------------------
 -- Iterate through plots
 function Shuffle(t)
-	local len = #t;
-	local random = Map.Rand;
-	for i = 1, len, 1 do
-		local k = random(len - 1, "Shuffling Values") + 1;
-		t[i], t[k] = t[k], t[i];
-	end
+    for i = #t, 2, -1 do
+        local j = Map.Rand(i, "Shuffling Values") + 1;
+        t[i], t[j] = t[j], t[i];
+    end
 end
 
 local _plots = {}; --memoize table of plots
@@ -193,7 +196,7 @@ end
 function GenerateCoasts(args)
 	print("Setting coasts and oceans (MapGenerator.Lua)");
 	local args = args or {};
-	local bExpandCoasts = args.bExpandCoasts or true;
+	local bExpandCoasts = args.bExpandCoasts ~= false;
 	local expansion_diceroll_table = args.expansion_diceroll_table or {2, 2};
 	
 	local shallowWater = GameDefines.SHALLOW_WATER_TERRAIN;
@@ -786,7 +789,9 @@ function StartPlotSystem()
 	print("Lekmap: Default StartPlotSystem -- override in your map script.");
 end
 
-function GenerateMap()
+local function GenerateNormalMap()
+    nextRiverID, _rivers = 0, {};
+    _plots = {}; -- Engine plot objects may change when generating another map.
 	print("Generating Map");
 	-- This is the core map generation function.
 	-- Every step in this process carries dependencies upon earlier steps.
@@ -829,4 +834,15 @@ function GenerateMap()
 
 	-- Continental artwork selection must wait until Areas are finalized, so it gets handled last.
 	DetermineContinents();
+end
+-- A map script runs inside a game launch, including multiplayer. Recover from
+-- unexpected script errors instead of leaving a partially generated world.
+function GenerateMap()
+    Lekmap_Utilities.ResetRecoveryStats()
+    local success, message = pcall(GenerateNormalMap)
+    if not success then
+        print("Lekmap native recovery: " .. tostring(message))
+        Lekmap_Utilities.RecoverGeneration()
+        if Map.DefaultContinentStamper then Map.DefaultContinentStamper() end
+    end
 end

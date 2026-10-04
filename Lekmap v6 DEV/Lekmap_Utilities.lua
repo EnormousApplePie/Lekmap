@@ -18,9 +18,289 @@
 
 Lekmap_Utilities = {}
 
+-- IsNaturalWonder is a C++ plot method, but is not exposed to Civ V's Lua.
+-- Read the active feature definition instead of depending on a DLL extension.
+function Lekmap_Utilities.IsNaturalWonder(plot)
+    if not plot or plot:GetFeatureType()<0 then return false end
+    local feature=GameInfo.Features[plot:GetFeatureType()]
+    return feature~=nil and (feature.NaturalWonder==true or feature.NaturalWonder==1)
+end
+
+local function HabitableStart(plot)
+    return plot and not plot:IsWater() and not plot:IsMountain() and not Lekmap_Utilities.IsNaturalWonder(plot)
+        and not plot:IsImpassable() and plot:GetFeatureType()~=FeatureTypes.FEATURE_OASIS
+end
+
+-- Native generation must return a playable map. Prefer existing mainland land,
+-- then other land; only an exhausted layout permits a small terrain repair.
+function Lekmap_Utilities.FindFallbackStart(occupied, minimum_distance, repair_terrain)
+    local width,height=Map.GetGridSize()
+    local mainland=Map.FindBiggestArea(false)
+    local mainland_id=mainland and mainland:GetID()
+    local best,best_score
+    for y=0,height-1 do for x=0,width-1 do
+        local plot=Map.GetPlot(x,y)
+        local usable=not Lekmap_Utilities.IsNaturalWonder(plot) and (repair_terrain or
+            (HabitableStart(plot) and plot:GetResourceType(-1)==-1))
+        if usable then
+            local closest=width+height
+            for _,start in ipairs(occupied) do closest=math.min(closest,Map.PlotDistance(x,y,start.x,start.y)) end
+            if closest>=minimum_distance then
+                local score=closest*100+(plot:IsFreshWater() and 10 or 0)
+                if #occupied==0 then score=score-(math.abs(x-(width-1)/2)+math.abs(y-(height-1)/2))*100 end
+                if mainland_id and plot:GetArea()==mainland_id then score=score+1000000 end
+                if not best_score or score>best_score then best,best_score=plot,score end
+            end
+        end
+    end end
+    if not best then return nil end
+    if repair_terrain then
+        best:SetResourceType(-1,0)
+        best:SetFeatureType(FeatureTypes.NO_FEATURE,-1)
+        best:SetPlotType(PlotTypes.PLOT_LAND,false,true)
+        best:SetTerrainType(TerrainTypes.TERRAIN_GRASS,false,true)
+    end
+    return best:GetX(),best:GetY()
+end
+
+function Lekmap_Utilities.EnsureNativeStarts()
+    local occupied={}
+    for id=0,GameDefines.MAX_CIV_PLAYERS-1 do
+        local player=Players[id]
+        if player and player:IsEverAlive() then
+            local plot=player:GetStartingPlot()
+            local valid=HabitableStart(plot)
+            if valid then
+                for _,other in ipairs(occupied) do
+                    if other.x==plot:GetX() and other.y==plot:GetY() then valid=false;break end
+                end
+            end
+            if not valid then
+                local x,y
+                for distance=5,1,-1 do
+                    x,y=Lekmap_Utilities.FindFallbackStart(occupied,distance,false)
+                    if x then break end
+                end
+                if not x then x,y=Lekmap_Utilities.FindFallbackStart(occupied,1,true) end
+                if x then
+                    plot=Map.GetPlot(x,y)
+                    player:SetStartingPlot(plot)
+                    print(string.format("Lekmap recovery: player %d starts at (%d,%d)",id,x,y))
+                end
+            end
+            if plot then
+                plot:SetResourceType(-1,0)
+                occupied[#occupied+1]={x=plot:GetX(),y=plot:GetY(),player=id,minor=id>=GameDefines.MAX_MAJOR_CIVS}
+            end
+        end
+    end
+    return occupied
+end
+
+-- A deterministic connected Pangaea used only if no usable fractal candidate
+-- survives, or if an unexpected Lua error interrupts the ordinary pipeline.
+function Lekmap_Utilities.EmergencyPlotTypes()
+    local width,height=Map.GetGridSize()
+    local plots={}
+    for y=0,height-1 do for x=0,width-1 do
+        local dx=(x-(width-1)/2)/(width*0.43)
+        local dy=(y-(height-1)/2)/(height*0.43)
+        local land=dx*dx+dy*dy<=1
+        plots[y*width+x+1]=land and ((x+2*y)%5==0 and PlotTypes.PLOT_HILLS or PlotTypes.PLOT_LAND) or PlotTypes.PLOT_OCEAN
+    end end
+    return plots
+end
+
+local recovering_generation=false
+local recovery_stats={calls=0,placement_retries=0,independent_completions=0}
+function Lekmap_Utilities.ResetRecoveryStats()
+    recovery_stats={calls=0,placement_retries=0,independent_completions=0}
+end
+function Lekmap_Utilities.GetRecoveryStats()
+    local result={};for key,value in pairs(recovery_stats) do result[key]=value end;return result
+end
+
+local function ClearRecoveryPlot(plot)
+    plot:SetResourceType(-1,0)
+    plot:SetFeatureType(FeatureTypes.NO_FEATURE,-1)
+    if plot.SetWOfRiver then plot:SetWOfRiver(false,FlowDirectionTypes.NO_FLOWDIRECTION) end
+    if plot.SetNWOfRiver then plot:SetNWOfRiver(false,FlowDirectionTypes.NO_FLOWDIRECTION) end
+    if plot.SetNEOfRiver then plot:SetNEOfRiver(false,FlowDirectionTypes.NO_FLOWDIRECTION) end
+    if plot.SetImprovementType then plot:SetImprovementType(-1) end
+    if plot.SetRouteType then plot:SetRouteType(-1) end
+end
+local function RecoveryRivers(width,height)
+    local spacing=({9,7,5})[Map.GetCustomOption(9)] or 7
+    for index=0,width*height-1 do
+        local plot=Map.GetPlotByIndex(index)
+        local east=Map.PlotDirection(plot:GetX(),plot:GetY(),DirectionTypes.DIRECTION_EAST)
+        if plot.SetWOfRiver and plot:GetX()%spacing==0 and not plot:IsWater() and east and not east:IsWater() then
+            plot:SetWOfRiver(true,FlowDirectionTypes.FLOWDIRECTION_NORTH)
+        end
+    end
+end
+local function RecoveryStateValid()
+    local occupied={}
+    for id=0,GameDefines.MAX_CIV_PLAYERS-1 do
+        local player=Players[id]
+        if player and player:IsEverAlive() then
+            local plot=player:GetStartingPlot()
+            if not HabitableStart(plot) then return false end
+            local index=plot:GetPlotIndex()
+            if occupied[index] or plot:GetResourceType(-1)~=-1 then return false end
+            occupied[index]=true
+        end
+    end
+    for index=0,Map.GetNumPlots()-1 do
+        local plot=Map.GetPlotByIndex(index)
+        local id=plot:GetResourceType(-1)
+        if id~=-1 then
+            local row=GameInfo.Resources[id]
+            local def=row and Lekmap_ResourceDefs.RESOURCE_DEFS[row.Type:gsub("^RESOURCE_","")]
+            local entry=Lekmap_ResourceDefs.DescribePlot(plot);entry.has_resource=false
+            if not def or not Lekmap_ResourceDefs.MatchesPlot(entry,def,false) then return false end
+        end
+    end
+    return true
+end
+
+function Lekmap_Utilities.RecoverGeneration()
+    local was_recovering=recovering_generation
+    recovering_generation=true
+    recovery_stats.calls=recovery_stats.calls+1
+    print("Lekmap recovery: generating a simple connected fallback map.")
+    local width,height=Map.GetGridSize()
+    local types=Lekmap_Utilities.EmergencyPlotTypes()
+    for index=0,width*height-1 do
+        local plot=Map.GetPlotByIndex(index)
+        ClearRecoveryPlot(plot)
+        plot:SetPlotType(types[index+1],false,false)
+        plot:SetTerrainType(plot:IsWater() and TerrainTypes.TERRAIN_COAST or TerrainTypes.TERRAIN_GRASS,false,false)
+    end
+    Map.RecalculateAreas()
+    -- A failed callback may already have changed half the map. Discard its
+    -- incomplete layer before proceeding to the next recovery stage.
+    if GenerateTerrain and not pcall(GenerateTerrain) then
+        for index=0,width*height-1 do
+            local plot=Map.GetPlotByIndex(index)
+            ClearRecoveryPlot(plot)
+            plot:SetPlotType(types[index+1],false,false)
+            plot:SetTerrainType(plot:IsWater() and TerrainTypes.TERRAIN_COAST or TerrainTypes.TERRAIN_GRASS,false,false)
+        end
+    end
+    local before_features={}
+    for index=0,width*height-1 do
+        local plot=Map.GetPlotByIndex(index)
+        before_features[index+1]={plot:GetPlotType(),plot:GetTerrainType()}
+    end
+    if AddFeatures and not pcall(AddFeatures) then
+        for index=0,width*height-1 do
+            local plot=Map.GetPlotByIndex(index)
+            local saved=before_features[index+1]
+            ClearRecoveryPlot(plot)
+            plot:SetPlotType(saved[1],false,false)
+            plot:SetTerrainType(saved[2],false,false)
+        end
+    end
+    before_features=nil
+    RecoveryRivers(width,height)
+    Map.RecalculateAreas()
+    -- Keep the successful climate/feature layers, but roll back all partial
+    -- start, wonder and resource placement if the normal retry fails.
+    local baseline={}
+    for index=0,width*height-1 do
+        local plot=Map.GetPlotByIndex(index)
+        baseline[index+1]={plot:GetPlotType(),plot:GetTerrainType(),plot:GetFeatureType()}
+    end
+    if not was_recovering and StartPlotSystem then
+        recovery_stats.placement_retries=recovery_stats.placement_retries+1
+        local placed=pcall(StartPlotSystem)
+        if placed and RecoveryStateValid() then recovering_generation=was_recovering;return end
+    end
+    recovery_stats.independent_completions=recovery_stats.independent_completions+1
+    for index=0,width*height-1 do
+        local plot=Map.GetPlotByIndex(index)
+        local saved=baseline[index+1]
+        ClearRecoveryPlot(plot)
+        plot:SetPlotType(saved[1],false,false)
+        plot:SetTerrainType(saved[2],false,false)
+        plot:SetFeatureType(saved[3],-1)
+    end
+    RecoveryRivers(width,height)
+    Map.RecalculateAreas()
+    local starts=Lekmap_Utilities.EnsureNativeStarts()
+    local occupied={}
+    for _,start in ipairs(starts) do occupied[start.y*width+start.x+1]=true end
+    local distribution=Map.GetCustomOption(25) or 2
+    local function permitted(key,plot)
+        local def=Lekmap_ResourceDefs.RESOURCE_DEFS[key]
+        if def.class~="strategic" or distribution==1 then return true end
+        if distribution==2 and (key=="IRON" or key=="HORSE") then return true end
+        local distances={}
+        for _,start in ipairs(starts) do if not start.minor then
+            local distance=Map.PlotDistance(plot:GetX(),plot:GetY(),start.x,start.y)
+            if distance<=3 then return false end
+            local team=Players[start.player]:GetTeam()
+            if not distances[team] or distance<distances[team] then distances[team]=distance end
+        end end
+        local ordered={};for _,distance in pairs(distances) do ordered[#ordered+1]=distance end;table.sort(ordered)
+        if #ordered==1 then return ordered[1]>=6 end
+        return #ordered>=2 and ordered[2]-ordered[1]<=4 and ordered[2]<=ordered[1]*1.5
+    end
+    -- Bounded choices on the existing terrain. This path depends only on
+    -- definitions and live plots; broken placement caches/writers are unused.
+    local land_keys={"COW","WHEAT","SHEEP","DEER","BANANA","STONE","HORSE","IRON","GOLD","COAL","ALUMINUM","URANIUM","OIL"}
+    local water_keys={"FISH","OIL"}
+    for index=0,width*height-1 do
+        local plot=Map.GetPlotByIndex(index)
+        if not occupied[index+1] then
+            local near_start=false
+            for _,start in ipairs(starts) do
+                if Map.PlotDistance(plot:GetX(),plot:GetY(),start.x,start.y)<=3 then near_start=true;break end
+            end
+            local attempt=plot:IsWater() and plot:IsAdjacentToLand() and index%5==0
+                or not plot:IsWater() and (near_start or index%5==0)
+            if attempt then
+                local entry=Lekmap_ResourceDefs.DescribePlot(plot)
+                local keys=plot:IsWater() and water_keys or land_keys
+                local offset=(index+math.floor(index/width))%#keys
+                for step=1,#keys do
+                    local key=keys[(offset+step-1)%#keys+1]
+                    local row=GameInfo.Resources["RESOURCE_"..key]
+                    local id=row and row.ID
+                    local def=Lekmap_ResourceDefs.RESOURCE_DEFS[key]
+                    if id and Lekmap_ResourceDefs.MatchesPlot(entry,def,false) and permitted(key,plot) then
+                        plot:SetResourceType(id,def.class=="strategic" and 4 or 1)
+                        break
+                    end
+                end
+            end
+        end
+    end
+    Map.RecalculateAreas()
+    recovering_generation=was_recovering
+end
+
 ------------------------------------------------------------------------------
 -- TABLE HELPERS
 ------------------------------------------------------------------------------
+
+-- Lua hash iteration order is not a multiplayer contract. Use ordered keys in
+-- passes that consume randomness or compete for the same plots.
+function Lekmap_Utilities.OrderedPairs(tbl)
+    local keys = {}
+    for key in pairs(tbl) do keys[#keys + 1] = key end
+    table.sort(keys, function(a, b)
+        if type(a) == type(b) then return a < b end
+        return tostring(a) < tostring(b)
+    end)
+    local index = 0
+    return function()
+        index = index + 1
+        local key = keys[index]
+        if key ~= nil then return key, tbl[key] end
+    end
+end
 
 --- Checks whether a value exists in a table.
 --- @param  tbl    table to search
@@ -137,6 +417,7 @@ function Lekmap_Utilities.GetPlayerAndTeamInfo()
     local num_civs = 0
     local num_city_states = 0
     local player_id_list = {}
+    local city_state_ids = {}
 
     for player_index = 0, GameDefines.MAX_MAJOR_CIVS - 1 do
         local player = Players[player_index]
@@ -150,6 +431,7 @@ function Lekmap_Utilities.GetPlayerAndTeamInfo()
         local player = Players[player_index]
         if player:IsEverAlive() then
             num_city_states = num_city_states + 1
+            table.insert(city_state_ids, player_index)
         end
     end
 
@@ -175,7 +457,7 @@ function Lekmap_Utilities.GetPlayerAndTeamInfo()
     end
 
     return num_civs, num_city_states, player_id_list, is_team_game,
-           teams_with_major_civs, num_civs_per_team
+           teams_with_major_civs, num_civs_per_team, city_state_ids
 end
 
 ------------------------------------------------------------------------------
@@ -366,6 +648,30 @@ end
 -- distribution.
 ------------------------------------------------------------------------------
 
+-- Distinguish the main ocean from enclosed seas by water-area identity.
+-- Fresh water on a land tile may come from a river; it cannot identify a sea.
+function Lekmap_Utilities.GetWaterKind(plot)
+    if not plot or not plot:IsWater() then return nil end
+    if plot:IsLake() then return "lake" end
+    local ocean = Map.FindBiggestArea(true)
+    if ocean and plot:GetArea() == ocean:GetID() then return "ocean" end
+    return "inland_sea"
+end
+
+function Lekmap_Utilities.AdjacentToOcean(x, y)
+    local plot = Map.GetPlot(x, y)
+    return plot and not plot:IsWater() and Lekmap_Utilities.AnyAdjacentSatisfies(x, y, function(other)
+        return Lekmap_Utilities.GetWaterKind(other) == "ocean"
+    end) or false
+end
+
+function Lekmap_Utilities.AdjacentToInlandSea(x, y)
+    local plot = Map.GetPlot(x, y)
+    return plot and not plot:IsWater() and Lekmap_Utilities.AnyAdjacentSatisfies(x, y, function(other)
+        return Lekmap_Utilities.GetWaterKind(other) == "inland_sea"
+    end) or false
+end
+
 --- Returns true if the plot at (x, y) is land adjacent to salt water.
 function Lekmap_Utilities.AdjacentToSaltWater(x, y)
     local plot = Map.GetPlot(x, y)
@@ -392,12 +698,11 @@ end
 --- @return is_coastal  boolean lookup table indexed by plot index
 function Lekmap_Utilities.GenerateCoastalLandDataTable()
     local map_width, map_height = Map.GetGridSize()
-    local is_coastal = {}
-    table.fill(is_coastal, false, map_width * map_height)
+    local is_coastal = table.fill(false, map_width * map_height)
 
     for x = 0, map_width - 1 do
         for y = 0, map_height - 1 do
-            if Lekmap_Utilities.AdjacentToSaltWater(x, y) then
+            if Lekmap_Utilities.AdjacentToOcean(x, y) then
                 is_coastal[Lekmap_Utilities.PlotIndex(x, y)] = true
             end
         end
@@ -410,8 +715,7 @@ end
 function Lekmap_Utilities.GenerateNextToCoastalLandDataTables()
     local is_coastal = Lekmap_Utilities.GenerateCoastalLandDataTable()
     local map_width, map_height = Map.GetGridSize()
-    local is_next_to_coast = {}
-    table.fill(is_next_to_coast, false, map_width * map_height)
+    local is_next_to_coast = table.fill(false, map_width * map_height)
 
     for x = 0, map_width - 1 do
         for y = 0, map_height - 1 do
@@ -435,8 +739,7 @@ end
 --- @return is_three_from_coast  boolean lookup table
 function Lekmap_Utilities.GenerateThreeFromCoastTable(is_coastal, is_next_to_coast)
     local map_width, map_height = Map.GetGridSize()
-    local is_three_from_coast = {}
-    table.fill(is_three_from_coast, false, map_width * map_height)
+    local is_three_from_coast = table.fill(false, map_width * map_height)
 
     for x = 0, map_width - 1 do
         for y = 0, map_height - 1 do
@@ -462,8 +765,7 @@ function Lekmap_Utilities.GenerateMainlandCoastDataTable()
     local map_width, map_height = Map.GetGridSize()
     local biggest_area = Map.FindBiggestArea(false)
     local mainland_area_id = biggest_area:GetID()
-    local is_mainland_coast = {}
-    table.fill(is_mainland_coast, false, map_width * map_height)
+    local is_mainland_coast = table.fill(false, map_width * map_height)
 
     for x = 0, map_width - 1 do
         for y = 0, map_height - 1 do
@@ -480,8 +782,7 @@ end
 function Lekmap_Utilities.GenerateMainlandExpandedCoastData()
     local is_mainland_coast = Lekmap_Utilities.GenerateMainlandCoastDataTable()
     local map_width, map_height = Map.GetGridSize()
-    local is_expanded_coast = {}
-    table.fill(is_expanded_coast, false, map_width * map_height)
+    local is_expanded_coast = table.fill(false, map_width * map_height)
 
     for x = 0, map_width - 1 do
         for y = 0, map_height - 1 do
@@ -506,8 +807,7 @@ end
 --- @return is_three_from_mainland  boolean lookup table
 function Lekmap_Utilities.GenerateThreeFromMainlandCoast(is_mainland_coast, is_expanded_coast)
     local map_width, map_height = Map.GetGridSize()
-    local is_three_from_mainland = {}
-    table.fill(is_three_from_mainland, false, map_width * map_height)
+    local is_three_from_mainland = table.fill(false, map_width * map_height)
 
     for x = 0, map_width - 1 do
         for y = 0, map_height - 1 do
